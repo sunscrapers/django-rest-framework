@@ -6,9 +6,12 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test.client import RequestFactory
+from rest_framework.authentication import BasicAuthentication, \
+    SessionAuthentication, TokenAuthentication
 from rest_framework.views import APIView
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
 from rest_framework.response import Response
+from django.conf.urls import patterns
 
 
 class User3SecRateThrottle(UserRateThrottle):
@@ -141,3 +144,58 @@ class ThrottlingTests(TestCase):
           (60, None),
           (80, None)
          ))
+
+
+class Anon3SecRateThrottle(AnonRateThrottle):
+    rate = '3/sec'
+    scope = 'seconds'
+
+
+class NextMockView(APIView):
+    throttle_classes = (Anon3SecRateThrottle,)
+
+    def get(self, request):
+        return Response('foo')
+
+
+urlpatterns = patterns('',
+    (r'^basic/$', NextMockView.as_view(authentication_classes=[BasicAuthentication])),
+    (r'^session/$', NextMockView.as_view(authentication_classes=[SessionAuthentication])),
+    (r'^token/$', NextMockView.as_view(authentication_classes=[TokenAuthentication])),
+    (r'^combined/$', NextMockView.as_view(authentication_classes=[SessionAuthentication, BasicAuthentication])),
+    (r'^combined/reverse/$', NextMockView.as_view(authentication_classes=[SessionAuthentication, BasicAuthentication])),
+)
+
+
+class ThrottlingWithAuthenticationTest(TestCase):
+    urls = 'rest_framework.tests.throttling'
+
+    def setUp(self):
+        self.username = 'john'
+        self.email = 'lennon@thebeatles.com'
+        self.password = 'password'
+        self.user = User.objects.create_user(self.username, self.email, self.password)
+
+    def test_basic_auth(self):
+        auth = 'Basic wrongcreds'
+        response = self.client.get('/basic/', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+
+    def test_session_auth(self):
+        response = self.client.get('/session/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_token_auth(self):
+        auth = 'Token wrongone'
+        response = self.client.get('/token/', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+
+    def test_combined_auth(self):
+        auth = 'Basic wrongcreds'
+        response = self.client.get('/combined/', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+
+    def test_combined_reverse_auth(self):
+        auth = 'Basic wrongcreds'
+        response = self.client.get('/combined/', HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
