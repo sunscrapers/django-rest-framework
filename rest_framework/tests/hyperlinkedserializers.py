@@ -27,6 +27,14 @@ class PhotoSerializer(serializers.Serializer):
         return Photo(**attrs)
 
 
+class AlbumSerializer(serializers.ModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name='album-detail', lookup_field='title')
+
+    class Meta:
+        model = Album
+        fields = ('title', 'url')
+
+
 class BasicList(generics.ListCreateAPIView):
     model = BasicModel
     model_serializer_class = serializers.HyperlinkedModelSerializer
@@ -73,6 +81,8 @@ class PhotoListCreate(generics.ListCreateAPIView):
 
 class AlbumDetail(generics.RetrieveAPIView):
     model = Album
+    serializer_class = AlbumSerializer
+    lookup_field = 'title'
 
 
 class OptionalRelationDetail(generics.RetrieveUpdateDestroyAPIView):
@@ -100,7 +110,7 @@ class TestBasicHyperlinkedView(TestCase):
 
     def setUp(self):
         """
-        Create 3 BasicModel intances.
+        Create 3 BasicModel instances.
         """
         items = ['foo', 'bar', 'baz']
         for item in items:
@@ -119,8 +129,8 @@ class TestBasicHyperlinkedView(TestCase):
         """
         request = factory.get('/basic/')
         response = self.list_view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data, self.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, self.data)
 
     def test_get_detail_view(self):
         """
@@ -128,8 +138,8 @@ class TestBasicHyperlinkedView(TestCase):
         """
         request = factory.get('/basic/1')
         response = self.detail_view(request, pk=1).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data, self.data[0])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, self.data[0])
 
 
 class TestManyToManyHyperlinkedView(TestCase):
@@ -137,7 +147,7 @@ class TestManyToManyHyperlinkedView(TestCase):
 
     def setUp(self):
         """
-        Create 3 BasicModel intances.
+        Create 3 BasicModel instances.
         """
         items = ['foo', 'bar', 'baz']
         anchors = []
@@ -167,8 +177,8 @@ class TestManyToManyHyperlinkedView(TestCase):
         """
         request = factory.get('/manytomany/')
         response = self.list_view(request)
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data, self.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, self.data)
 
     def test_get_detail_view(self):
         """
@@ -176,8 +186,38 @@ class TestManyToManyHyperlinkedView(TestCase):
         """
         request = factory.get('/manytomany/1/')
         response = self.detail_view(request, pk=1)
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data, self.data[0])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, self.data[0])
+
+
+class TestHyperlinkedIdentityFieldLookup(TestCase):
+    urls = 'rest_framework.tests.hyperlinkedserializers'
+
+    def setUp(self):
+        """
+        Create 3 Album instances.
+        """
+        titles = ['foo', 'bar', 'baz']
+        for title in titles:
+            album = Album(title=title)
+            album.save()
+        self.detail_view = AlbumDetail.as_view()
+        self.data = {
+            'foo': {'title': 'foo', 'url': 'http://testserver/albums/foo/'},
+            'bar': {'title': 'bar', 'url': 'http://testserver/albums/bar/'},
+            'baz': {'title': 'baz', 'url': 'http://testserver/albums/baz/'}
+        }
+
+    def test_lookup_field(self):
+        """
+        GET requests to AlbumDetail view should return serialized Albums
+        with a url field keyed by `title`.
+        """
+        for album in Album.objects.all():
+            request = factory.get('/albums/{0}/'.format(album.title))
+            response = self.detail_view(request, title=album.title)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data, self.data[album.title])
 
 
 class TestCreateWithForeignKeys(TestCase):
@@ -235,7 +275,7 @@ class TestOptionalRelationHyperlinkedView(TestCase):
 
     def setUp(self):
         """
-        Create 1 OptionalRelationModel intances.
+        Create 1 OptionalRelationModel instances.
         """
         OptionalRelationModel().save()
         self.objects = OptionalRelationModel.objects
@@ -249,8 +289,8 @@ class TestOptionalRelationHyperlinkedView(TestCase):
         """
         request = factory.get('/optionalrelationmodel-detail/1')
         response = self.detail_view(request, pk=1)
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data, self.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, self.data)
 
     def test_put_detail_view(self):
         """

@@ -1,15 +1,22 @@
 from __future__ import unicode_literals
 import datetime
 from decimal import Decimal
+from django.db import models
 from django.core.paginator import Paginator
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.utils import unittest
 from rest_framework import generics, status, pagination, filters, serializers
 from rest_framework.compat import django_filters
-from rest_framework.tests.models import BasicModel, FilterableItem
+from rest_framework.tests.models import BasicModel
 
 factory = RequestFactory()
+
+
+class FilterableItem(models.Model):
+    text = models.CharField(max_length=100)
+    decimal = models.DecimalField(max_digits=4, decimal_places=2)
+    date = models.DateField()
 
 
 class RootView(generics.ListCreateAPIView):
@@ -18,21 +25,6 @@ class RootView(generics.ListCreateAPIView):
     """
     model = BasicModel
     paginate_by = 10
-
-
-if django_filters:
-    class DecimalFilter(django_filters.FilterSet):
-        decimal = django_filters.NumberFilter(lookup_type='lt')
-
-        class Meta:
-            model = FilterableItem
-            fields = ['text', 'decimal', 'date']
-
-    class FilterFieldsRootView(generics.ListCreateAPIView):
-        model = FilterableItem
-        paginate_by = 10
-        filter_class = DecimalFilter
-        filter_backend = filters.DjangoFilterBackend
 
 
 class DefaultPageSizeKwargView(generics.ListAPIView):
@@ -73,28 +65,32 @@ class IntegrationTestPagination(TestCase):
         GET requests to paginated ListCreateAPIView should return paginated results.
         """
         request = factory.get('/')
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 26)
-        self.assertEquals(response.data['results'], self.data[:10])
-        self.assertNotEquals(response.data['next'], None)
-        self.assertEquals(response.data['previous'], None)
+        # Note: Database queries are a `SELECT COUNT`, and `SELECT <fields>`
+        with self.assertNumQueries(2):
+            response = self.view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 26)
+        self.assertEqual(response.data['results'], self.data[:10])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertEqual(response.data['previous'], None)
 
         request = factory.get(response.data['next'])
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 26)
-        self.assertEquals(response.data['results'], self.data[10:20])
-        self.assertNotEquals(response.data['next'], None)
-        self.assertNotEquals(response.data['previous'], None)
+        with self.assertNumQueries(2):
+            response = self.view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 26)
+        self.assertEqual(response.data['results'], self.data[10:20])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertNotEqual(response.data['previous'], None)
 
         request = factory.get(response.data['next'])
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 26)
-        self.assertEquals(response.data['results'], self.data[20:])
-        self.assertEquals(response.data['next'], None)
-        self.assertNotEquals(response.data['previous'], None)
+        with self.assertNumQueries(2):
+            response = self.view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 26)
+        self.assertEqual(response.data['results'], self.data[20:])
+        self.assertEqual(response.data['next'], None)
+        self.assertNotEqual(response.data['previous'], None)
 
 
 class IntegrationTestPaginationAndFiltering(TestCase):
@@ -112,41 +108,105 @@ class IntegrationTestPaginationAndFiltering(TestCase):
 
         self.objects = FilterableItem.objects
         self.data = [
-        {'id': obj.id, 'text': obj.text, 'decimal': obj.decimal, 'date': obj.date}
-        for obj in self.objects.all()
+            {'id': obj.id, 'text': obj.text, 'decimal': obj.decimal, 'date': obj.date}
+            for obj in self.objects.all()
         ]
-        self.view = FilterFieldsRootView.as_view()
 
     @unittest.skipUnless(django_filters, 'django-filters not installed')
-    def test_get_paginated_filtered_root_view(self):
+    def test_get_django_filter_paginated_filtered_root_view(self):
         """
         GET requests to paginated filtered ListCreateAPIView should return
         paginated results. The next and previous links should preserve the
         filtered parameters.
         """
+        class DecimalFilter(django_filters.FilterSet):
+            decimal = django_filters.NumberFilter(lookup_type='lt')
+
+            class Meta:
+                model = FilterableItem
+                fields = ['text', 'decimal', 'date']
+
+        class FilterFieldsRootView(generics.ListCreateAPIView):
+            model = FilterableItem
+            paginate_by = 10
+            filter_class = DecimalFilter
+            filter_backends = (filters.DjangoFilterBackend,)
+
+        view = FilterFieldsRootView.as_view()
+
+        EXPECTED_NUM_QUERIES = 2
+
         request = factory.get('/?decimal=15.20')
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 15)
-        self.assertEquals(response.data['results'], self.data[:10])
-        self.assertNotEquals(response.data['next'], None)
-        self.assertEquals(response.data['previous'], None)
+        with self.assertNumQueries(EXPECTED_NUM_QUERIES):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[:10])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertEqual(response.data['previous'], None)
 
         request = factory.get(response.data['next'])
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 15)
-        self.assertEquals(response.data['results'], self.data[10:15])
-        self.assertEquals(response.data['next'], None)
-        self.assertNotEquals(response.data['previous'], None)
+        with self.assertNumQueries(EXPECTED_NUM_QUERIES):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[10:15])
+        self.assertEqual(response.data['next'], None)
+        self.assertNotEqual(response.data['previous'], None)
 
         request = factory.get(response.data['previous'])
-        response = self.view(request).render()
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
-        self.assertEquals(response.data['count'], 15)
-        self.assertEquals(response.data['results'], self.data[:10])
-        self.assertNotEquals(response.data['next'], None)
-        self.assertEquals(response.data['previous'], None)
+        with self.assertNumQueries(EXPECTED_NUM_QUERIES):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[:10])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertEqual(response.data['previous'], None)
+
+    def test_get_basic_paginated_filtered_root_view(self):
+        """
+        Same as `test_get_django_filter_paginated_filtered_root_view`,
+        except using a custom filter backend instead of the django-filter
+        backend,
+        """
+
+        class DecimalFilterBackend(filters.BaseFilterBackend):
+            def filter_queryset(self, request, queryset, view):
+                return queryset.filter(decimal__lt=Decimal(request.GET['decimal']))
+
+        class BasicFilterFieldsRootView(generics.ListCreateAPIView):
+            model = FilterableItem
+            paginate_by = 10
+            filter_backends = (DecimalFilterBackend,)
+
+        view = BasicFilterFieldsRootView.as_view()
+
+        request = factory.get('/?decimal=15.20')
+        with self.assertNumQueries(2):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[:10])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertEqual(response.data['previous'], None)
+
+        request = factory.get(response.data['next'])
+        with self.assertNumQueries(2):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[10:15])
+        self.assertEqual(response.data['next'], None)
+        self.assertNotEqual(response.data['previous'], None)
+
+        request = factory.get(response.data['previous'])
+        with self.assertNumQueries(2):
+            response = view(request).render()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['results'], self.data[:10])
+        self.assertNotEqual(response.data['next'], None)
+        self.assertEqual(response.data['previous'], None)
 
 
 class PassOnContextPaginationSerializer(pagination.PaginationSerializer):
@@ -167,16 +227,16 @@ class UnitTestPagination(TestCase):
 
     def test_native_pagination(self):
         serializer = pagination.PaginationSerializer(self.first_page)
-        self.assertEquals(serializer.data['count'], 26)
-        self.assertEquals(serializer.data['next'], '?page=2')
-        self.assertEquals(serializer.data['previous'], None)
-        self.assertEquals(serializer.data['results'], self.objects[:10])
+        self.assertEqual(serializer.data['count'], 26)
+        self.assertEqual(serializer.data['next'], '?page=2')
+        self.assertEqual(serializer.data['previous'], None)
+        self.assertEqual(serializer.data['results'], self.objects[:10])
 
         serializer = pagination.PaginationSerializer(self.last_page)
-        self.assertEquals(serializer.data['count'], 26)
-        self.assertEquals(serializer.data['next'], None)
-        self.assertEquals(serializer.data['previous'], '?page=2')
-        self.assertEquals(serializer.data['results'], self.objects[20:])
+        self.assertEqual(serializer.data['count'], 26)
+        self.assertEqual(serializer.data['next'], None)
+        self.assertEqual(serializer.data['previous'], '?page=2')
+        self.assertEqual(serializer.data['results'], self.objects[20:])
 
     def test_context_available_in_result(self):
         """
@@ -185,7 +245,7 @@ class UnitTestPagination(TestCase):
         serializer = PassOnContextPaginationSerializer(self.first_page, context={'foo': 'bar'})
         serializer.data
         results = serializer.fields[serializer.results_field]
-        self.assertEquals(serializer.context, results.context)
+        self.assertEqual(serializer.context, results.context)
 
 
 class TestUnpaginated(TestCase):
@@ -213,7 +273,7 @@ class TestUnpaginated(TestCase):
         """
         request = factory.get('/')
         response = self.view(request)
-        self.assertEquals(response.data, self.data)
+        self.assertEqual(response.data, self.data)
 
 
 class TestCustomPaginateByParam(TestCase):
@@ -241,7 +301,7 @@ class TestCustomPaginateByParam(TestCase):
         """
         request = factory.get('/')
         response = self.view(request).render()
-        self.assertEquals(response.data, self.data)
+        self.assertEqual(response.data, self.data)
 
     def test_paginate_by_param(self):
         """
@@ -249,8 +309,8 @@ class TestCustomPaginateByParam(TestCase):
         """
         request = factory.get('/?page_size=5')
         response = self.view(request).render()
-        self.assertEquals(response.data['count'], 13)
-        self.assertEquals(response.data['results'], self.data[:5])
+        self.assertEqual(response.data['count'], 13)
+        self.assertEqual(response.data['results'], self.data[:5])
 
 
 ### Tests for context in pagination serializers
@@ -285,7 +345,7 @@ class TestContextPassedToCustomField(TestCase):
         request = factory.get('/')
         response = self.view(request).render()
 
-        self.assertEquals(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
 ### Tests for custom pagination serializers
@@ -322,4 +382,4 @@ class TestCustomPaginationSerializer(TestCase):
             'total_results': 4,
             'objects': ['john', 'paul']
         }
-        self.assertEquals(serializer.data, expected)
+        self.assertEqual(serializer.data, expected)

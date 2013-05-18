@@ -27,7 +27,8 @@ The default set of renderers may be set globally, using the `DEFAULT_RENDERER_CL
         )
     }
 
-You can also set the renderers used for an individual view, using the `APIView` class based views.
+You can also set the renderers used for an individual view, or viewset,
+using the `APIView` class based views.
 
     class UserCountView(APIView):
         """
@@ -56,7 +57,7 @@ Or, if you're using the `@api_view` decorator with function based views.
 
 It's important when specifying the renderer classes for your API to think about what priority you want to assign to each media type.  If a client underspecifies the representations it can accept, such as sending an `Accept: */*` header, or not including an `Accept` header at all, then REST framework will select the first renderer in the list to use for the response.
 
-For example if your API serves JSON responses and the HTML browseable API, you might want to make `JSONRenderer` your default renderer, in order to send `JSON` responses to clients that do not specify an `Accept` header.
+For example if your API serves JSON responses and the HTML browsable API, you might want to make `JSONRenderer` your default renderer, in order to send `JSON` responses to clients that do not specify an `Accept` header.
 
 If your API includes views that can serve both regular webpages and API responses depending on the request, then you might consider making `TemplateHTMLRenderer` your default renderer, in order to play nicely with older browsers that send [broken accept headers][browser-accept-headers].
 
@@ -90,6 +91,8 @@ The javascript callback function must be set by the client including a `callback
 
 Renders the request data into `YAML`. 
 
+Requires the `pyyaml` package to be installed.
+
 **.media_type**: `application/yaml`
 
 **.format**: `'.yaml'`
@@ -115,17 +118,17 @@ The TemplateHTMLRenderer will create a `RequestContext`, using the `response.dat
 
 The template name is determined by (in order of preference):
 
-1. An explicit `.template_name` attribute set on the response.
+1. An explicit `template_name` argument passed to the response.
 2. An explicit `.template_name` attribute set on this class.
 3. The return result of calling `view.get_template_names()`.
 
 An example of a view that uses `TemplateHTMLRenderer`:
 
-    class UserInstance(generics.RetrieveUserAPIView):
+    class UserDetail(generics.RetrieveUserAPIView):
         """
         A view that returns a templated HTML representations of a given user.
         """
-        model = Users
+        queryset = User.objects.all()
         renderer_classes = (TemplateHTMLRenderer,)
 
         def get(self, request, *args, **kwargs)
@@ -164,7 +167,7 @@ See also: `TemplateHTMLRenderer`
 
 ## BrowsableAPIRenderer
 
-Renders data into HTML for the Browseable API.  This renderer will determine which other renderer would have been given highest priority, and use that to display an API style response within the HTML page.
+Renders data into HTML for the Browsable API.  This renderer will determine which other renderer would have been given highest priority, and use that to display an API style response within the HTML page.
 
 **.media_type**: `text/html`
 

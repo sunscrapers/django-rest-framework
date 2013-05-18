@@ -86,7 +86,7 @@ For the purposes of this tutorial we're going to start by creating a simple `Sni
     
     class Snippet(models.Model):
         created = models.DateTimeField(auto_now_add=True)
-        title = models.CharField(max_length=100, default='')
+        title = models.CharField(max_length=100, blank=True, default='')
         code = models.TextField()
         linenos = models.BooleanField(default=False)
         language = models.CharField(choices=LANGUAGE_CHOICES,
@@ -126,7 +126,11 @@ The first thing we need to get started on our Web API is provide a way of serial
     
         def restore_object(self, attrs, instance=None):
             """
-            Create or update a new snippet instance.
+            Create or update a new snippet instance, given a dictionary
+            of deserialized field values.
+            
+            Note that if we don't define this method, then deserializing
+            data will simply return a dictionary of items.
             """
             if instance:
                 # Update existing instance
@@ -200,7 +204,7 @@ We can also serialize querysets instead of model instances.  To do so we simply 
 
 ## Using ModelSerializers
 
-Our `SnippetSerializer` class is replicating a lot of information that's also contained in the `Snippet` model.  It would be nice if we could keep out code a bit  more concise.
+Our `SnippetSerializer` class is replicating a lot of information that's also contained in the `Snippet` model.  It would be nice if we could keep our code a bit  more concise.
 
 In the same way that Django provides both `Form` classes and `ModelForm` classes, REST framework includes both `Serializer` classes, and `ModelSerializer` classes.
 
@@ -304,11 +308,11 @@ It's worth noting that there are a couple of edge cases we're not dealing with p
 
 Now we can start up a sample server that serves our snippets.
 
-Quit out of the shell
+Quit out of the shell...
 
 	quit()
 
-and start up Django's development server
+...and start up Django's development server.
 
 	python manage.py runserver
 
@@ -327,7 +331,7 @@ We can get a list of all of the snippets.
 
 	[{"id": 1, "title": "", "code": "foo = \"bar\"\n", "linenos": false, "language": "python", "style": "friendly"}, {"id": 2, "title": "", "code": "print \"hello, world\"\n", "linenos": false, "language": "python", "style": "friendly"}]
 
-or we can get a particular snippet by referencing its id
+Or we can get a particular snippet by referencing its id.
 
 	curl http://127.0.0.1:8000/snippets/2/
 

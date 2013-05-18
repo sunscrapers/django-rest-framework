@@ -1,8 +1,11 @@
 from __future__ import unicode_literals
 from rest_framework.compat import StringIO
 from django import forms
+from django.core.files.uploadhandler import MemoryFileUploadHandler
 from django.test import TestCase
-from rest_framework.parsers import FormParser
+from django.utils import unittest
+from rest_framework.compat import etree
+from rest_framework.parsers import FormParser, FileUploadParser
 from rest_framework.parsers import XMLParser
 import datetime
 
@@ -69,12 +72,44 @@ class TestXMLParser(TestCase):
             ]
         }
 
+    @unittest.skipUnless(etree, 'defusedxml not installed')
     def test_parse(self):
         parser = XMLParser()
         data = parser.parse(self._input)
         self.assertEqual(data, self._data)
 
+    @unittest.skipUnless(etree, 'defusedxml not installed')
     def test_complex_data_parse(self):
         parser = XMLParser()
         data = parser.parse(self._complex_data_input)
         self.assertEqual(data, self._complex_data)
+
+
+class TestFileUploadParser(TestCase):
+    def setUp(self):
+        class MockRequest(object):
+            pass
+        from io import BytesIO
+        self.stream = BytesIO(
+            "Test text file".encode('utf-8')
+        )
+        request = MockRequest()
+        request.upload_handlers = (MemoryFileUploadHandler(),)
+        request.META = {
+            'HTTP_CONTENT_DISPOSITION': 'Content-Disposition: inline; filename=file.txt'.encode('utf-8'),
+            'HTTP_CONTENT_LENGTH': 14,
+        }
+        self.parser_context = {'request': request, 'kwargs': {}}
+
+    def test_parse(self):
+        """ Make sure the `QueryDict` works OK """
+        parser = FileUploadParser()
+        self.stream.seek(0)
+        data_and_files = parser.parse(self.stream, None, self.parser_context)
+        file_obj = data_and_files.files['file']
+        self.assertEqual(file_obj._size, 14)
+
+    def test_get_filename(self):
+        parser = FileUploadParser()
+        filename = parser.get_filename(self.stream, None, self.parser_context)
+        self.assertEqual(filename, 'file.txt'.encode('utf-8'))

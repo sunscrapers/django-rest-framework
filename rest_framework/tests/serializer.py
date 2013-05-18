@@ -3,7 +3,7 @@ from django.utils.datastructures import MultiValueDict
 from django.test import TestCase
 from rest_framework import serializers
 from rest_framework.tests.models import (HasPositiveIntegerAsChoice, Album, ActionItem, Anchor, BasicModel,
-    BlankFieldModel, BlogPost, Book, CallableDefaultValueModel, DefaultValueModel,
+    BlankFieldModel, BlogPost, BlogPostComment, Book, CallableDefaultValueModel, DefaultValueModel,
     ManyToManyModel, Person, ReadOnlyManyToManyModel, Photo)
 import datetime
 import pickle
@@ -78,6 +78,18 @@ class PersonSerializer(serializers.ModelSerializer):
         read_only_fields = ('age',)
 
 
+class PersonSerializerInvalidReadOnly(serializers.ModelSerializer):
+    """
+    Testing for #652.
+    """
+    info = serializers.Field(source='info')
+
+    class Meta:
+        model = Person
+        fields = ('name', 'age', 'info')
+        read_only_fields = ('age', 'info')
+
+
 class AlbumsSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -89,6 +101,11 @@ class PositiveIntegerAsChoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = HasPositiveIntegerAsChoice
         fields = ['some_integer']
+
+
+class BrokenModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = ['some_field']
 
 
 class BasicTests(TestCase):
@@ -122,39 +139,39 @@ class BasicTests(TestCase):
             'created': None,
             'sub_comment': ''
         }
-        self.assertEquals(serializer.data, expected)
+        self.assertEqual(serializer.data, expected)
 
     def test_retrieve(self):
         serializer = CommentSerializer(self.comment)
-        self.assertEquals(serializer.data, self.expected)
+        self.assertEqual(serializer.data, self.expected)
 
     def test_create(self):
         serializer = CommentSerializer(data=self.data)
         expected = self.comment
-        self.assertEquals(serializer.is_valid(), True)
-        self.assertEquals(serializer.object, expected)
+        self.assertEqual(serializer.is_valid(), True)
+        self.assertEqual(serializer.object, expected)
         self.assertFalse(serializer.object is expected)
-        self.assertEquals(serializer.data['sub_comment'], 'And Merry Christmas!')
+        self.assertEqual(serializer.data['sub_comment'], 'And Merry Christmas!')
 
     def test_update(self):
         serializer = CommentSerializer(self.comment, data=self.data)
         expected = self.comment
-        self.assertEquals(serializer.is_valid(), True)
-        self.assertEquals(serializer.object, expected)
+        self.assertEqual(serializer.is_valid(), True)
+        self.assertEqual(serializer.object, expected)
         self.assertTrue(serializer.object is expected)
-        self.assertEquals(serializer.data['sub_comment'], 'And Merry Christmas!')
+        self.assertEqual(serializer.data['sub_comment'], 'And Merry Christmas!')
 
     def test_partial_update(self):
         msg = 'Merry New Year!'
         partial_data = {'content': msg}
         serializer = CommentSerializer(self.comment, data=partial_data)
-        self.assertEquals(serializer.is_valid(), False)
+        self.assertEqual(serializer.is_valid(), False)
         serializer = CommentSerializer(self.comment, data=partial_data, partial=True)
         expected = self.comment
         self.assertEqual(serializer.is_valid(), True)
-        self.assertEquals(serializer.object, expected)
+        self.assertEqual(serializer.object, expected)
         self.assertTrue(serializer.object is expected)
-        self.assertEquals(serializer.data['content'], msg)
+        self.assertEqual(serializer.data['content'], msg)
 
     def test_model_fields_as_expected(self):
         """
@@ -162,7 +179,7 @@ class BasicTests(TestCase):
         in the Meta data
         """
         serializer = PersonSerializer(self.person)
-        self.assertEquals(set(serializer.data.keys()),
+        self.assertEqual(set(serializer.data.keys()),
                           set(['name', 'age', 'info']))
 
     def test_field_with_dictionary(self):
@@ -171,18 +188,24 @@ class BasicTests(TestCase):
         """
         serializer = PersonSerializer(self.person)
         expected = self.person_data
-        self.assertEquals(serializer.data['info'], expected)
+        self.assertEqual(serializer.data['info'], expected)
 
     def test_read_only_fields(self):
         """
         Attempting to update fields set as read_only should have no effect.
         """
         serializer = PersonSerializer(self.person, data={'name': 'dwight', 'age': 99})
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(serializer.errors, {})
+        self.assertEqual(serializer.errors, {})
         # Assert age is unchanged (35)
-        self.assertEquals(instance.age, self.person_data['age'])
+        self.assertEqual(instance.age, self.person_data['age'])
+
+    def test_invalid_read_only_fields(self):
+        """
+        Regression test for #652.
+        """
+        self.assertRaises(AssertionError, PersonSerializerInvalidReadOnly, [])
 
 
 class DictStyleSerializer(serializers.Serializer):
@@ -201,7 +224,7 @@ class DictStyleSerializerTests(TestCase):
         data = {'email': 'foo@example.com'}
         serializer = DictStyleSerializer(data=data)
         self.assertTrue(serializer.is_valid())
-        self.assertEquals(serializer.data, data)
+        self.assertEqual(serializer.data, data)
 
     def test_dict_style_serialize(self):
         """
@@ -209,7 +232,7 @@ class DictStyleSerializerTests(TestCase):
         """
         data = {'email': 'foo@example.com'}
         serializer = DictStyleSerializer(data)
-        self.assertEquals(serializer.data, data)
+        self.assertEqual(serializer.data, data)
 
 
 class ValidationTests(TestCase):
@@ -228,13 +251,13 @@ class ValidationTests(TestCase):
 
     def test_create(self):
         serializer = CommentSerializer(data=self.data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'content': ['Ensure this value has at most 1000 characters (it has 1001).']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'content': ['Ensure this value has at most 1000 characters (it has 1001).']})
 
     def test_update(self):
         serializer = CommentSerializer(self.comment, data=self.data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'content': ['Ensure this value has at most 1000 characters (it has 1001).']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'content': ['Ensure this value has at most 1000 characters (it has 1001).']})
 
     def test_update_missing_field(self):
         data = {
@@ -242,8 +265,8 @@ class ValidationTests(TestCase):
             'created': datetime.datetime(2012, 1, 1)
         }
         serializer = CommentSerializer(self.comment, data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'email': ['This field is required.']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'email': ['This field is required.']})
 
     def test_missing_bool_with_default(self):
         """Make sure that a boolean value with a 'False' value is not
@@ -253,27 +276,8 @@ class ValidationTests(TestCase):
             #No 'done' value.
         }
         serializer = ActionItemSerializer(self.actionitem, data=data)
-        self.assertEquals(serializer.is_valid(), True)
-        self.assertEquals(serializer.errors, {})
-
-    def test_bad_type_data_is_false(self):
-        """
-        Data of the wrong type is not valid.
-        """
-        data = ['i am', 'a', 'list']
-        serializer = CommentSerializer(self.comment, data=data, many=True)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'non_field_errors': ['Invalid data']})
-
-        data = 'and i am a string'
-        serializer = CommentSerializer(self.comment, data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'non_field_errors': ['Invalid data']})
-
-        data = 42
-        serializer = CommentSerializer(self.comment, data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'non_field_errors': ['Invalid data']})
+        self.assertEqual(serializer.is_valid(), True)
+        self.assertEqual(serializer.errors, {})
 
     def test_cross_field_validation(self):
 
@@ -297,23 +301,23 @@ class ValidationTests(TestCase):
 
         serializer = CommentSerializerWithCrossFieldValidator(data=data)
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'non_field_errors': ['Email address not in content']})
+        self.assertEqual(serializer.errors, {'non_field_errors': ['Email address not in content']})
 
     def test_null_is_true_fields(self):
         """
         Omitting a value for null-field should validate.
         """
         serializer = PersonSerializer(data={'name': 'marko'})
-        self.assertEquals(serializer.is_valid(), True)
-        self.assertEquals(serializer.errors, {})
+        self.assertEqual(serializer.is_valid(), True)
+        self.assertEqual(serializer.errors, {})
 
     def test_modelserializer_max_length_exceeded(self):
         data = {
             'title': 'x' * 201,
         }
         serializer = ActionItemSerializer(data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'title': ['Ensure this value has at most 200 characters (it has 201).']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'title': ['Ensure this value has at most 200 characters (it has 201).']})
 
     def test_modelserializer_max_length_exceeded_with_custom_restore(self):
         """
@@ -326,8 +330,8 @@ class ValidationTests(TestCase):
             'title': 'x' * 201,
         }
         serializer = ActionItemSerializerCustomRestore(data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'title': ['Ensure this value has at most 200 characters (it has 201).']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'title': ['Ensure this value has at most 200 characters (it has 201).']})
 
     def test_default_modelfield_max_length_exceeded(self):
         data = {
@@ -335,8 +339,35 @@ class ValidationTests(TestCase):
             'info': 'x' * 13,
         }
         serializer = ActionItemSerializer(data=data)
-        self.assertEquals(serializer.is_valid(), False)
-        self.assertEquals(serializer.errors, {'info': ['Ensure this value has at most 12 characters (it has 13).']})
+        self.assertEqual(serializer.is_valid(), False)
+        self.assertEqual(serializer.errors, {'info': ['Ensure this value has at most 12 characters (it has 13).']})
+
+    def test_datetime_validation_failure(self):
+        """
+        Test DateTimeField validation errors on non-str values.
+        Regression test for #669.
+
+        https://github.com/tomchristie/django-rest-framework/issues/669
+        """
+        data = self.data
+        data['created'] = 0
+
+        serializer = CommentSerializer(data=data)
+        self.assertEqual(serializer.is_valid(), False)
+
+        self.assertIn('created', serializer.errors)
+
+    def test_missing_model_field_exception_msg(self):
+        """
+        Assert that a meaningful exception message is outputted when the model
+        field is missing (e.g. when mistyping ``model``).
+        """
+        try:
+            serializer = BrokenModelSerializer()
+        except AssertionError as e:
+            self.assertEqual(e.args[0], "Serializer class 'BrokenModelSerializer' is missing 'model' Meta option")
+        except:
+            self.fail('Wrong exception type thrown.')
 
 
 class CustomValidationTests(TestCase):
@@ -344,7 +375,6 @@ class CustomValidationTests(TestCase):
 
         def validate_email(self, attrs, source):
             value = attrs[source]
-
             return attrs
 
         def validate_content(self, attrs, source):
@@ -367,7 +397,7 @@ class CustomValidationTests(TestCase):
 
         serializer = self.CommentSerializerWithFieldValidator(data=data)
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'content': ['Test not in value']})
+        self.assertEqual(serializer.errors, {'content': ['Test not in value']})
 
     def test_missing_data(self):
         """
@@ -379,7 +409,7 @@ class CustomValidationTests(TestCase):
         }
         serializer = self.CommentSerializerWithFieldValidator(data=incomplete_data)
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'content': ['This field is required.']})
+        self.assertEqual(serializer.errors, {'content': ['This field is required.']})
 
     def test_wrong_data(self):
         """
@@ -392,14 +422,14 @@ class CustomValidationTests(TestCase):
         }
         serializer = self.CommentSerializerWithFieldValidator(data=wrong_data)
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'email': ['Enter a valid e-mail address.']})
+        self.assertEqual(serializer.errors, {'email': ['Enter a valid e-mail address.']})
 
 
 class PositiveIntegerAsChoiceTests(TestCase):
     def test_positive_integer_in_json_is_correctly_parsed(self):
         data = {'some_integer': 1}
         serializer = PositiveIntegerAsChoiceSerializer(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
 
 
 class ModelValidationTests(TestCase):
@@ -450,15 +480,15 @@ class RegexValidationTest(TestCase):
     def test_create_failed(self):
         serializer = BookSerializer(data={'isbn': '1234567890'})
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
+        self.assertEqual(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
 
         serializer = BookSerializer(data={'isbn': '12345678901234'})
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
+        self.assertEqual(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
 
         serializer = BookSerializer(data={'isbn': 'abcdefghijklm'})
         self.assertFalse(serializer.is_valid())
-        self.assertEquals(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
+        self.assertEqual(serializer.errors, {'isbn': ['isbn has to be exact 13 numbers']})
 
     def test_create_success(self):
         serializer = BookSerializer(data={'isbn': '1234567890123'})
@@ -503,7 +533,7 @@ class ManyToManyTests(TestCase):
         """
         serializer = self.serializer_class(instance=self.instance)
         expected = self.data
-        self.assertEquals(serializer.data, expected)
+        self.assertEqual(serializer.data, expected)
 
     def test_create(self):
         """
@@ -511,11 +541,11 @@ class ManyToManyTests(TestCase):
         """
         data = {'rel': [self.anchor.id]}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ManyToManyModel.objects.all()), 2)
-        self.assertEquals(instance.pk, 2)
-        self.assertEquals(list(instance.rel.all()), [self.anchor])
+        self.assertEqual(len(ManyToManyModel.objects.all()), 2)
+        self.assertEqual(instance.pk, 2)
+        self.assertEqual(list(instance.rel.all()), [self.anchor])
 
     def test_update(self):
         """
@@ -525,11 +555,11 @@ class ManyToManyTests(TestCase):
         new_anchor.save()
         data = {'rel': [self.anchor.id, new_anchor.id]}
         serializer = self.serializer_class(self.instance, data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ManyToManyModel.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(list(instance.rel.all()), [self.anchor, new_anchor])
+        self.assertEqual(len(ManyToManyModel.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(list(instance.rel.all()), [self.anchor, new_anchor])
 
     def test_create_empty_relationship(self):
         """
@@ -538,11 +568,11 @@ class ManyToManyTests(TestCase):
         """
         data = {'rel': []}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ManyToManyModel.objects.all()), 2)
-        self.assertEquals(instance.pk, 2)
-        self.assertEquals(list(instance.rel.all()), [])
+        self.assertEqual(len(ManyToManyModel.objects.all()), 2)
+        self.assertEqual(instance.pk, 2)
+        self.assertEqual(list(instance.rel.all()), [])
 
     def test_update_empty_relationship(self):
         """
@@ -553,11 +583,11 @@ class ManyToManyTests(TestCase):
         new_anchor.save()
         data = {'rel': []}
         serializer = self.serializer_class(self.instance, data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ManyToManyModel.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(list(instance.rel.all()), [])
+        self.assertEqual(len(ManyToManyModel.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(list(instance.rel.all()), [])
 
     def test_create_empty_relationship_flat_data(self):
         """
@@ -568,11 +598,11 @@ class ManyToManyTests(TestCase):
         data = MultiValueDict()
         data.setlist('rel', [''])
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ManyToManyModel.objects.all()), 2)
-        self.assertEquals(instance.pk, 2)
-        self.assertEquals(list(instance.rel.all()), [])
+        self.assertEqual(len(ManyToManyModel.objects.all()), 2)
+        self.assertEqual(instance.pk, 2)
+        self.assertEqual(list(instance.rel.all()), [])
 
 
 class ReadOnlyManyToManyTests(TestCase):
@@ -606,12 +636,12 @@ class ReadOnlyManyToManyTests(TestCase):
         new_anchor.save()
         data = {'rel': [self.anchor.id, new_anchor.id]}
         serializer = self.serializer_class(self.instance, data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ReadOnlyManyToManyModel.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
+        self.assertEqual(len(ReadOnlyManyToManyModel.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
         # rel is still as original (1 entry)
-        self.assertEquals(list(instance.rel.all()), [self.anchor])
+        self.assertEqual(list(instance.rel.all()), [self.anchor])
 
     def test_update_without_relationship(self):
         """
@@ -622,12 +652,12 @@ class ReadOnlyManyToManyTests(TestCase):
         new_anchor.save()
         data = {}
         serializer = self.serializer_class(self.instance, data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(ReadOnlyManyToManyModel.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
+        self.assertEqual(len(ReadOnlyManyToManyModel.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
         # rel is still as original (1 entry)
-        self.assertEquals(list(instance.rel.all()), [self.anchor])
+        self.assertEqual(list(instance.rel.all()), [self.anchor])
 
 
 class DefaultValueTests(TestCase):
@@ -642,35 +672,35 @@ class DefaultValueTests(TestCase):
     def test_create_using_default(self):
         data = {}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(self.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(instance.text, 'foobar')
+        self.assertEqual(len(self.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(instance.text, 'foobar')
 
     def test_create_overriding_default(self):
         data = {'text': 'overridden'}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(self.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(instance.text, 'overridden')
+        self.assertEqual(len(self.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(instance.text, 'overridden')
 
     def test_partial_update_default(self):
         """ Regression test for issue #532 """
         data = {'text': 'overridden'}
         serializer = self.serializer_class(data=data, partial=True)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
 
         data = {'extra': 'extra_value'}
         serializer = self.serializer_class(instance=instance, data=data, partial=True)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
 
-        self.assertEquals(instance.extra, 'extra_value')
-        self.assertEquals(instance.text, 'overridden')
+        self.assertEqual(instance.extra, 'extra_value')
+        self.assertEqual(instance.text, 'overridden')
 
 
 class CallableDefaultValueTests(TestCase):
@@ -685,20 +715,20 @@ class CallableDefaultValueTests(TestCase):
     def test_create_using_default(self):
         data = {}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(self.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(instance.text, 'foobar')
+        self.assertEqual(len(self.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(instance.text, 'foobar')
 
     def test_create_overriding_default(self):
         data = {'text': 'overridden'}
         serializer = self.serializer_class(data=data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
         instance = serializer.save()
-        self.assertEquals(len(self.objects.all()), 1)
-        self.assertEquals(instance.pk, 1)
-        self.assertEquals(instance.text, 'overridden')
+        self.assertEqual(len(self.objects.all()), 1)
+        self.assertEqual(instance.pk, 1)
+        self.assertEqual(instance.text, 'overridden')
 
 
 class ManyRelatedTests(TestCase):
@@ -723,6 +753,43 @@ class ManyRelatedTests(TestCase):
             ]
         }
 
+        self.assertEqual(serializer.data, expected)
+
+    def test_include_reverse_relations(self):
+        post = BlogPost.objects.create(title="Test blog post")
+        post.blogpostcomment_set.create(text="I hate this blog post")
+        post.blogpostcomment_set.create(text="I love this blog post")
+
+        class BlogPostSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = BlogPost
+                fields = ('id', 'title', 'blogpostcomment_set')
+
+        serializer = BlogPostSerializer(instance=post)
+        expected = {
+            'id': 1, 'title': 'Test blog post', 'blogpostcomment_set': [1, 2]
+        }
+        self.assertEqual(serializer.data, expected)
+
+    def test_depth_include_reverse_relations(self):
+        post = BlogPost.objects.create(title="Test blog post")
+        post.blogpostcomment_set.create(text="I hate this blog post")
+        post.blogpostcomment_set.create(text="I love this blog post")
+
+        class BlogPostSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = BlogPost
+                fields = ('id', 'title', 'blogpostcomment_set')
+                depth = 1
+
+        serializer = BlogPostSerializer(instance=post)
+        expected = {
+            'id': 1, 'title': 'Test blog post',
+            'blogpostcomment_set': [
+                {'id': 1, 'text': 'I hate this blog post', 'blog_post': 1},
+                {'id': 2, 'text': 'I love this blog post', 'blog_post': 1}
+            ]
+        }
         self.assertEqual(serializer.data, expected)
 
     def test_callable_source(self):
@@ -753,8 +820,6 @@ class RelatedTraversalTest(TestCase):
         user = Person.objects.create(name="django")
         post = BlogPost.objects.create(title="Test blog post", writer=user)
         post.blogpostcomment_set.create(text="I love this blog post")
-
-        from rest_framework.tests.models import BlogPostComment
 
         class PersonSerializer(serializers.ModelSerializer):
             class Meta:
@@ -821,7 +886,7 @@ class RelatedTraversalTest(TestCase):
 
         obj = ClassWithQuerysetMethod()
         serializer = QuerysetMethodSerializer(obj)
-        self.assertEquals(serializer.data, {'blogposts': ['BlogPost object']})
+        self.assertEqual(serializer.data, {'blogposts': ['BlogPost object']})
 
 
 class SerializerMethodFieldTests(TestCase):
@@ -884,15 +949,15 @@ class BlankFieldTests(TestCase):
 
     def test_create_blank_field(self):
         serializer = self.serializer_class(data=self.data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
 
     def test_create_model_blank_field(self):
         serializer = self.model_serializer_class(data=self.data)
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
 
     def test_create_model_null_field(self):
         serializer = self.model_serializer_class(data={'title': None})
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
 
     def test_create_not_blank_field(self):
         """
@@ -900,7 +965,7 @@ class BlankFieldTests(TestCase):
         is considered invalid in a non-model serializer
         """
         serializer = self.not_blank_serializer_class(data=self.data)
-        self.assertEquals(serializer.is_valid(), False)
+        self.assertEqual(serializer.is_valid(), False)
 
     def test_create_model_not_blank_field(self):
         """
@@ -908,11 +973,11 @@ class BlankFieldTests(TestCase):
         is considered invalid in a model serializer
         """
         serializer = self.not_blank_model_serializer_class(data=self.data)
-        self.assertEquals(serializer.is_valid(), False)
+        self.assertEqual(serializer.is_valid(), False)
 
     def test_create_model_empty_field(self):
         serializer = self.model_serializer_class(data={})
-        self.assertEquals(serializer.is_valid(), True)
+        self.assertEqual(serializer.is_valid(), True)
 
 
 #test for issue #460
@@ -936,35 +1001,45 @@ class SerializerPickleTests(TestCase):
             class Meta:
                 model = Person
                 fields = ('name', 'age')
-        pickle.dumps(InnerPersonSerializer(Person(name="Noah", age=950)).data)
+        pickle.dumps(InnerPersonSerializer(Person(name="Noah", age=950)).data, 0)
 
     def test_getstate_method_should_not_return_none(self):
-        '''Regression test for 
-        https://github.com/tomchristie/django-rest-framework/issues/645
-        '''
-        d = serializers.DictWithMetadata({1:1})
-        self.assertEqual(d.__getstate__(), serializers.SortedDict({1:1}))
+        """
+        Regression test for #645.
+        """
+        data = serializers.DictWithMetadata({1: 1})
+        self.assertEqual(data.__getstate__(), serializers.SortedDict({1: 1}))
+
+    def test_serializer_data_is_pickleable(self):
+        """
+        Another regression test for #645.
+        """
+        data = serializers.SortedDictWithMetadata({1: 1})
+        repr(pickle.loads(pickle.dumps(data, 0)))
 
 
 class DepthTest(TestCase):
     def test_implicit_nesting(self):
+
         writer = Person.objects.create(name="django", age=1)
         post = BlogPost.objects.create(title="Test blog post", writer=writer)
+        comment = BlogPostComment.objects.create(text="Test blog post comment", blog_post=post)
 
-        class BlogPostSerializer(serializers.ModelSerializer):
+        class BlogPostCommentSerializer(serializers.ModelSerializer):
             class Meta:
-                model = BlogPost
-                depth = 1
+                model = BlogPostComment
+                depth = 2
 
-        serializer = BlogPostSerializer(instance=post)
-        expected = {'id': 1, 'title': 'Test blog post',
-                    'writer': {'id': 1, 'name': 'django', 'age': 1}}
+        serializer = BlogPostCommentSerializer(instance=comment)
+        expected = {'id': 1, 'text': 'Test blog post comment', 'blog_post': {'id': 1, 'title': 'Test blog post',
+                    'writer': {'id': 1, 'name': 'django', 'age': 1}}}
 
         self.assertEqual(serializer.data, expected)
 
     def test_explicit_nesting(self):
         writer = Person.objects.create(name="django", age=1)
         post = BlogPost.objects.create(title="Test blog post", writer=writer)
+        comment = BlogPostComment.objects.create(text="Test blog post comment", blog_post=post)
 
         class PersonSerializer(serializers.ModelSerializer):
             class Meta:
@@ -976,9 +1051,15 @@ class DepthTest(TestCase):
             class Meta:
                 model = BlogPost
 
-        serializer = BlogPostSerializer(instance=post)
-        expected = {'id': 1, 'title': 'Test blog post',
-                    'writer': {'id': 1, 'name': 'django', 'age': 1}}
+        class BlogPostCommentSerializer(serializers.ModelSerializer):
+            blog_post = BlogPostSerializer()
+
+            class Meta:
+                model = BlogPostComment
+
+        serializer = BlogPostCommentSerializer(instance=comment)
+        expected = {'id': 1, 'text': 'Test blog post comment', 'blog_post': {'id': 1, 'title': 'Test blog post',
+                    'writer': {'id': 1, 'name': 'django', 'age': 1}}}
 
         self.assertEqual(serializer.data, expected)
 
@@ -1033,3 +1114,32 @@ class NestedSerializerContextTests(TestCase):
 
         # This will raise RuntimeError if context doesn't get passed correctly to the nested Serializers
         AlbumCollectionSerializer(album_collection, context={'context_item': 'album context'}).data
+
+
+class DeserializeListTestCase(TestCase):
+
+    def setUp(self):
+        self.data = {
+            'email': 'nobody@nowhere.com',
+            'content': 'This is some test content',
+            'created': datetime.datetime(2013, 3, 7),
+        }
+
+    def test_no_errors(self):
+        data = [self.data.copy() for x in range(0, 3)]
+        serializer = CommentSerializer(data=data, many=True)
+        self.assertTrue(serializer.is_valid())
+        self.assertTrue(isinstance(serializer.object, list))
+        self.assertTrue(
+            all((isinstance(item, Comment) for item in serializer.object))
+        )
+
+    def test_errors_return_as_list(self):
+        invalid_item = self.data.copy()
+        invalid_item['email'] = ''
+        data = [self.data.copy(), invalid_item, self.data.copy()]
+
+        serializer = CommentSerializer(data=data, many=True)
+        self.assertFalse(serializer.is_valid())
+        expected = [{}, {'email': ['This field is required.']}, {}]
+        self.assertEqual(serializer.errors, expected)
