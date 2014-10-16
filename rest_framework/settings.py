@@ -18,12 +18,9 @@ REST framework settings, checking for user settings first, then falling
 back to the defaults.
 """
 from __future__ import unicode_literals
-
 from django.conf import settings
-from django.utils import importlib
-
+from django.utils import importlib, six
 from rest_framework import ISO_8601
-from rest_framework.compat import six
 
 
 USER_SETTINGS = getattr(settings, 'REST_FRAMEWORK', None)
@@ -46,17 +43,12 @@ DEFAULTS = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
     ),
-    'DEFAULT_THROTTLE_CLASSES': (
-    ),
-
-    'DEFAULT_CONTENT_NEGOTIATION_CLASS':
-        'rest_framework.negotiation.DefaultContentNegotiation',
+    'DEFAULT_THROTTLE_CLASSES': (),
+    'DEFAULT_CONTENT_NEGOTIATION_CLASS': 'rest_framework.negotiation.DefaultContentNegotiation',
 
     # Genric view behavior
-    'DEFAULT_MODEL_SERIALIZER_CLASS':
-        'rest_framework.serializers.ModelSerializer',
-    'DEFAULT_PAGINATION_SERIALIZER_CLASS':
-        'rest_framework.pagination.PaginationSerializer',
+    'DEFAULT_MODEL_SERIALIZER_CLASS': 'rest_framework.serializers.ModelSerializer',
+    'DEFAULT_PAGINATION_SERIALIZER_CLASS': 'rest_framework.pagination.PaginationSerializer',
     'DEFAULT_FILTER_BACKENDS': (),
 
     # Throttling
@@ -64,14 +56,34 @@ DEFAULTS = {
         'user': None,
         'anon': None,
     },
+    'NUM_PROXIES': None,
 
     # Pagination
     'PAGINATE_BY': None,
     'PAGINATE_BY_PARAM': None,
+    'MAX_PAGINATE_BY': None,
+
+    # Filtering
+    'SEARCH_PARAM': 'search',
+    'ORDERING_PARAM': 'ordering',
 
     # Authentication
     'UNAUTHENTICATED_USER': 'django.contrib.auth.models.AnonymousUser',
     'UNAUTHENTICATED_TOKEN': None,
+
+    # View configuration
+    'VIEW_NAME_FUNCTION': 'rest_framework.views.get_view_name',
+    'VIEW_DESCRIPTION_FUNCTION': 'rest_framework.views.get_view_description',
+
+    # Exception handling
+    'EXCEPTION_HANDLER': 'rest_framework.views.exception_handler',
+
+    # Testing
+    'TEST_REQUEST_RENDERER_CLASSES': (
+        'rest_framework.renderers.MultiPartRenderer',
+        'rest_framework.renderers.JSONRenderer'
+    ),
+    'TEST_REQUEST_DEFAULT_FORMAT': 'multipart',
 
     # Browser enhancements
     'FORM_METHOD_OVERRIDE': '_method',
@@ -81,6 +93,7 @@ DEFAULTS = {
     'URL_FORMAT_OVERRIDE': 'format',
 
     'FORMAT_SUFFIX_KWARG': 'format',
+    'URL_FIELD_NAME': 'url',
 
     # Input and output formats
     'DATE_INPUT_FORMATS': (
@@ -100,6 +113,7 @@ DEFAULTS = {
 
     # Pending deprecation
     'FILTER_BACKEND': None,
+
 }
 
 
@@ -114,9 +128,13 @@ IMPORT_STRINGS = (
     'DEFAULT_MODEL_SERIALIZER_CLASS',
     'DEFAULT_PAGINATION_SERIALIZER_CLASS',
     'DEFAULT_FILTER_BACKENDS',
+    'EXCEPTION_HANDLER',
     'FILTER_BACKEND',
+    'TEST_REQUEST_RENDERER_CLASSES',
     'UNAUTHENTICATED_USER',
     'UNAUTHENTICATED_TOKEN',
+    'VIEW_NAME_FUNCTION',
+    'VIEW_DESCRIPTION_FUNCTION'
 )
 
 

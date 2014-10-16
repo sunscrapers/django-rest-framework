@@ -9,7 +9,7 @@ Actions are only bound to methods at the point of instantiating the views.
     user_detail = UserViewSet.as_view({'get': 'retrieve'})
 
 Typically, rather than instantiate views from viewsets directly, you'll
-regsiter the viewset with a router and let the URL conf be determined
+register the viewset with a router and let the URL conf be determined
 automatically.
 
     router = DefaultRouter()
@@ -20,6 +20,7 @@ from __future__ import unicode_literals
 
 from functools import update_wrapper
 from django.utils.decorators import classonlymethod
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import views, generics, mixins
 
 
@@ -89,7 +90,7 @@ class ViewSetMixin(object):
         # resolved URL.
         view.cls = cls
         view.suffix = initkwargs.get('suffix', None)
-        return view
+        return csrf_exempt(view)
 
     def initialize_request(self, request, *args, **kargs):
         """
@@ -127,11 +128,11 @@ class ReadOnlyModelViewSet(mixins.RetrieveModelMixin,
 
 
 class ModelViewSet(mixins.CreateModelMixin,
-                    mixins.RetrieveModelMixin,
-                    mixins.UpdateModelMixin,
-                    mixins.DestroyModelMixin,
-                    mixins.ListModelMixin,
-                    GenericViewSet):
+                   mixins.RetrieveModelMixin,
+                   mixins.UpdateModelMixin,
+                   mixins.DestroyModelMixin,
+                   mixins.ListModelMixin,
+                   GenericViewSet):
     """
     A viewset that provides default `create()`, `retrieve()`, `update()`,
     `partial_update()`, `destroy()` and `list()` actions.

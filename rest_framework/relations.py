@@ -8,18 +8,18 @@ from __future__ import unicode_literals
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.urlresolvers import resolve, get_script_prefix, NoReverseMatch
 from django import forms
+from django.db.models.fields import BLANK_CHOICE_DASH
 from django.forms import widgets
 from django.forms.models import ModelChoiceIterator
 from django.utils.translation import ugettext_lazy as _
-from rest_framework.fields import Field, WritableField, get_component
+from rest_framework.fields import Field, WritableField, get_component, is_simple_callable
 from rest_framework.reverse import reverse
 from rest_framework.compat import urlparse
 from rest_framework.compat import smart_text
 import warnings
 
 
-##### Relational fields #####
-
+# Relational fields
 
 # Not actually Writable, but subclasses may need to be.
 class RelatedField(WritableField):
@@ -32,6 +32,7 @@ class RelatedField(WritableField):
     many_widget = widgets.SelectMultiple
     form_field_class = forms.ChoiceField
     many_form_field_class = forms.MultipleChoiceField
+    null_values = (None, '', 'None')
 
     cache_choices = False
     empty_label = None
@@ -39,15 +40,7 @@ class RelatedField(WritableField):
     many = False
 
     def __init__(self, *args, **kwargs):
-
-        # 'null' is to be deprecated in favor of 'required'
-        if 'null' in kwargs:
-            warnings.warn('The `null` keyword argument is deprecated. '
-                          'Use the `required` keyword argument instead.',
-                          DeprecationWarning, stacklevel=2)
-            kwargs['required'] = not kwargs.pop('null')
-
-        self.queryset = kwargs.pop('queryset', None)
+        queryset = kwargs.pop('queryset', None)
         self.many = kwargs.pop('many', self.many)
         if self.many:
             self.widget = self.many_widget
@@ -56,22 +49,23 @@ class RelatedField(WritableField):
         kwargs['read_only'] = kwargs.pop('read_only', self.read_only)
         super(RelatedField, self).__init__(*args, **kwargs)
 
+        if not self.required:
+            # Accessed in ModelChoiceIterator django/forms/models.py:1034
+            # If set adds empty choice.
+            self.empty_label = BLANK_CHOICE_DASH[0][1]
+
+        self.queryset = queryset
+
     def initialize(self, parent, field_name):
         super(RelatedField, self).initialize(parent, field_name)
         if self.queryset is None and not self.read_only:
-            try:
-                manager = getattr(self.parent.opts.model, self.source or field_name)
-                if hasattr(manager, 'related'):  # Forward
-                    self.queryset = manager.related.model._default_manager.all()
-                else:  # Reverse
-                    self.queryset = manager.field.rel.to._default_manager.all()
-            except Exception:
-                raise
-                msg = ('Serializer related fields must include a `queryset`' +
-                       ' argument or set `read_only=True')
-                raise Exception(msg)
+            manager = getattr(self.parent.opts.model, self.source or field_name)
+            if hasattr(manager, 'related'):  # Forward
+                self.queryset = manager.related.model._default_manager.all()
+            else:  # Reverse
+                self.queryset = manager.field.rel.to._default_manager.all()
 
-    ### We need this stuff to make form choices work...
+    # We need this stuff to make form choices work...
 
     def prepare_value(self, obj):
         return self.to_native(obj)
@@ -118,7 +112,15 @@ class RelatedField(WritableField):
 
     choices = property(_get_choices, _set_choices)
 
-    ### Regular serializer stuff...
+    # Default value handling
+
+    def get_default_value(self):
+        default = super(RelatedField, self).get_default_value()
+        if self.many and default is None:
+            return []
+        return default
+
+    # Regular serializer stuff...
 
     def field_to_native(self, obj, field_name):
         try:
@@ -129,9 +131,9 @@ class RelatedField(WritableField):
             value = obj
 
             for component in source.split('.'):
-                value = get_component(value, component)
                 if value is None:
                     break
+                value = get_component(value, component)
         except ObjectDoesNotExist:
             return None
 
@@ -139,7 +141,12 @@ class RelatedField(WritableField):
             return None
 
         if self.many:
-            return [self.to_native(item) for item in value.all()]
+            if is_simple_callable(getattr(value, 'all', None)):
+                return [self.to_native(item) for item in value.all()]
+            else:
+                # Also support non-queryset iterables.
+                # This allows us to also support plain lists of related items.
+                return [self.to_native(item) for item in value]
         return self.to_native(value)
 
     def field_from_native(self, data, files, field_name, into):
@@ -161,11 +168,11 @@ class RelatedField(WritableField):
         except KeyError:
             if self.partial:
                 return
-            value = [] if self.many else None
+            value = self.get_default_value()
 
-        if value in (None, '') and self.required:
-            raise ValidationError(self.error_messages['required'])
-        elif value in (None, ''):
+        if value in self.null_values:
+            if self.required:
+                raise ValidationError(self.error_messages['required'])
             into[(self.source or field_name)] = None
         elif self.many:
             into[(self.source or field_name)] = [self.from_native(item) for item in value]
@@ -173,7 +180,7 @@ class RelatedField(WritableField):
             into[(self.source or field_name)] = self.from_native(value)
 
 
-### PrimaryKey relationships
+# PrimaryKey relationships
 
 class PrimaryKeyRelatedField(RelatedField):
     """
@@ -221,15 +228,30 @@ class PrimaryKeyRelatedField(RelatedField):
     def field_to_native(self, obj, field_name):
         if self.many:
             # To-many relationship
-            try:
+
+            queryset = None
+            if not self.source:
                 # Prefer obj.serializable_value for performance reasons
-                queryset = obj.serializable_value(self.source or field_name)
-            except AttributeError:
+                try:
+                    queryset = obj.serializable_value(field_name)
+                except AttributeError:
+                    pass
+            if queryset is None:
                 # RelatedManager (reverse relationship)
-                queryset = getattr(obj, self.source or field_name)
+                source = self.source or field_name
+                queryset = obj
+                for component in source.split('.'):
+                    if queryset is None:
+                        return []
+                    queryset = get_component(queryset, component)
 
             # Forward relationship
-            return [self.to_native(item.pk) for item in queryset.all()]
+            if is_simple_callable(getattr(queryset, 'all', None)):
+                return [self.to_native(item.pk) for item in queryset.all()]
+            else:
+                # Also support non-queryset iterables.
+                # This allows us to also support plain lists of related items.
+                return [self.to_native(item.pk) for item in queryset]
 
         # To-one relationship
         try:
@@ -239,15 +261,14 @@ class PrimaryKeyRelatedField(RelatedField):
             # RelatedObject (reverse relationship)
             try:
                 pk = getattr(obj, self.source or field_name).pk
-            except ObjectDoesNotExist:
+            except (ObjectDoesNotExist, AttributeError):
                 return None
 
         # Forward relationship
         return self.to_native(pk)
 
 
-### Slug relationships
-
+# Slug relationships
 
 class SlugRelatedField(RelatedField):
     """
@@ -282,7 +303,7 @@ class SlugRelatedField(RelatedField):
             raise ValidationError(msg)
 
 
-### Hyperlinked relationships
+# Hyperlinked relationships
 
 class HyperlinkedRelatedField(RelatedField):
     """
@@ -299,7 +320,7 @@ class HyperlinkedRelatedField(RelatedField):
         'incorrect_type': _('Incorrect type.  Expected url string, received %s.'),
     }
 
-    # These are all pending deprecation
+    # These are all deprecated
     pk_url_kwarg = 'pk'
     slug_field = 'slug'
     slug_url_kwarg = None  # Defaults to same as `slug_field` unless overridden
@@ -313,16 +334,16 @@ class HyperlinkedRelatedField(RelatedField):
         self.lookup_field = kwargs.pop('lookup_field', self.lookup_field)
         self.format = kwargs.pop('format', None)
 
-        # These are pending deprecation
+        # These are deprecated
         if 'pk_url_kwarg' in kwargs:
-            msg = 'pk_url_kwarg is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'pk_url_kwarg is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         if 'slug_url_kwarg' in kwargs:
-            msg = 'slug_url_kwarg is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'slug_url_kwarg is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         if 'slug_field' in kwargs:
-            msg = 'slug_field is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'slug_field is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
         self.pk_url_kwarg = kwargs.pop('pk_url_kwarg', self.pk_url_kwarg)
         self.slug_field = kwargs.pop('slug_field', self.slug_field)
@@ -365,9 +386,9 @@ class HyperlinkedRelatedField(RelatedField):
                     # If the lookup succeeds using the default slug params,
                     # then `slug_field` is being used implicitly, and we
                     # we need to warn about the pending deprecation.
-                    msg = 'Implicit slug field hyperlinked fields are pending deprecation.' \
+                    msg = 'Implicit slug field hyperlinked fields are deprecated.' \
                           'You should set `lookup_field=slug` on the HyperlinkedRelatedField.'
-                    warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+                    warnings.warn(msg, DeprecationWarning, stacklevel=2)
                 return ret
             except NoReverseMatch:
                 pass
@@ -401,14 +422,11 @@ class HyperlinkedRelatedField(RelatedField):
         request = self.context.get('request', None)
         format = self.format or self.context.get('format', None)
 
-        if request is None:
-            msg = (
-                "Using `HyperlinkedRelatedField` without including the request "
-                "in the serializer context is deprecated. "
-                "Add `context={'request': request}` when instantiating "
-                "the serializer."
-            )
-            warnings.warn(msg, DeprecationWarning, stacklevel=4)
+        assert request is not None, (
+            "`HyperlinkedRelatedField` requires the request in the serializer "
+            "context. Add `context={'request': request}` when instantiating "
+            "the serializer."
+        )
 
         # If the object has not yet been saved then we cannot hyperlink to it.
         if getattr(obj, 'pk', None) is None:
@@ -434,7 +452,7 @@ class HyperlinkedRelatedField(RelatedField):
             raise Exception('Writable related fields must include a `queryset` argument')
 
         try:
-            http_prefix = value.startswith('http:') or value.startswith('https:')
+            http_prefix = value.startswith(('http:', 'https:'))
         except AttributeError:
             msg = self.error_messages['incorrect_type']
             raise ValidationError(msg % type(value).__name__)
@@ -468,30 +486,32 @@ class HyperlinkedIdentityField(Field):
     lookup_field = 'pk'
     read_only = True
 
-    # These are all pending deprecation
+    # These are all deprecated
     pk_url_kwarg = 'pk'
     slug_field = 'slug'
     slug_url_kwarg = None  # Defaults to same as `slug_field` unless overridden
 
     def __init__(self, *args, **kwargs):
-        # TODO: Make view_name mandatory, and have the
-        # HyperlinkedModelSerializer set it on-the-fly
-        self.view_name = kwargs.pop('view_name', None)
-        # Optionally the format of the target hyperlink may be specified
+        try:
+            self.view_name = kwargs.pop('view_name')
+        except KeyError:
+            msg = "HyperlinkedIdentityField requires 'view_name' argument"
+            raise ValueError(msg)
+
         self.format = kwargs.pop('format', None)
+        lookup_field = kwargs.pop('lookup_field', None)
+        self.lookup_field = lookup_field or self.lookup_field
 
-        self.lookup_field = kwargs.pop('lookup_field', self.lookup_field)
-
-        # These are pending deprecation
+        # These are deprecated
         if 'pk_url_kwarg' in kwargs:
-            msg = 'pk_url_kwarg is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'pk_url_kwarg is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         if 'slug_url_kwarg' in kwargs:
-            msg = 'slug_url_kwarg is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'slug_url_kwarg is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         if 'slug_field' in kwargs:
-            msg = 'slug_field is pending deprecation. Use lookup_field instead.'
-            warnings.warn(msg, PendingDeprecationWarning, stacklevel=2)
+            msg = 'slug_field is deprecated. Use lookup_field instead.'
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
         self.slug_field = kwargs.pop('slug_field', self.slug_field)
         default_slug_kwarg = self.slug_url_kwarg or self.slug_field
@@ -503,15 +523,13 @@ class HyperlinkedIdentityField(Field):
     def field_to_native(self, obj, field_name):
         request = self.context.get('request', None)
         format = self.context.get('format', None)
-        view_name = self.view_name or self.parent.opts.view_name
-        lookup_field = getattr(obj, self.lookup_field)
-        kwargs = {self.lookup_field: lookup_field}
+        view_name = self.view_name
 
-        if request is None:
-            warnings.warn("Using `HyperlinkedIdentityField` without including the "
-                          "request in the serializer context is deprecated. "
-                          "Add `context={'request': request}` when instantiating the serializer.",
-                          DeprecationWarning, stacklevel=4)
+        assert request is not None, (
+            "`HyperlinkedIdentityField` requires the request in the serializer"
+            " context. Add `context={'request': request}` when instantiating "
+            "the serializer."
+        )
 
         # By default use whatever format is given for the current context
         # unless the target is a different type to the source.
@@ -525,64 +543,53 @@ class HyperlinkedIdentityField(Field):
         if format and self.format and self.format != format:
             format = self.format
 
+        # Return the hyperlink, or error if incorrectly configured.
+        try:
+            return self.get_url(obj, view_name, request, format)
+        except NoReverseMatch:
+            msg = (
+                'Could not resolve URL for hyperlinked relationship using '
+                'view name "%s". You may have failed to include the related '
+                'model in your API, or incorrectly configured the '
+                '`lookup_field` attribute on this field.'
+            )
+            raise Exception(msg % view_name)
+
+    def get_url(self, obj, view_name, request, format):
+        """
+        Given an object, return the URL that hyperlinks to the object.
+
+        May raise a `NoReverseMatch` if the `view_name` and `lookup_field`
+        attributes are not configured to correctly match the URL conf.
+        """
+        lookup_field = getattr(obj, self.lookup_field, None)
+        kwargs = {self.lookup_field: lookup_field}
+
+        # Handle unsaved object case
+        if lookup_field is None:
+            return None
+
         try:
             return reverse(view_name, kwargs=kwargs, request=request, format=format)
         except NoReverseMatch:
             pass
+
+        if self.pk_url_kwarg != 'pk':
+            # Only try pk lookup if it has been explicitly set.
+            # Otherwise, the default `lookup_field = 'pk'` has us covered.
+            kwargs = {self.pk_url_kwarg: obj.pk}
+            try:
+                return reverse(view_name, kwargs=kwargs, request=request, format=format)
+            except NoReverseMatch:
+                pass
 
         slug = getattr(obj, self.slug_field, None)
+        if slug:
+            # Only use slug lookup if a slug field exists on the model
+            kwargs = {self.slug_url_kwarg: slug}
+            try:
+                return reverse(view_name, kwargs=kwargs, request=request, format=format)
+            except NoReverseMatch:
+                pass
 
-        if not slug:
-            raise Exception('Could not resolve URL for field using view name "%s"' % view_name)
-
-        kwargs = {self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except NoReverseMatch:
-            pass
-
-        kwargs = {self.pk_url_kwarg: obj.pk, self.slug_url_kwarg: slug}
-        try:
-            return reverse(view_name, kwargs=kwargs, request=request, format=format)
-        except NoReverseMatch:
-            pass
-
-        raise Exception('Could not resolve URL for field using view name "%s"' % view_name)
-
-
-### Old-style many classes for backwards compat
-
-class ManyRelatedField(RelatedField):
-    def __init__(self, *args, **kwargs):
-        warnings.warn('`ManyRelatedField()` is deprecated. '
-                      'Use `RelatedField(many=True)` instead.',
-                       DeprecationWarning, stacklevel=2)
-        kwargs['many'] = True
-        super(ManyRelatedField, self).__init__(*args, **kwargs)
-
-
-class ManyPrimaryKeyRelatedField(PrimaryKeyRelatedField):
-    def __init__(self, *args, **kwargs):
-        warnings.warn('`ManyPrimaryKeyRelatedField()` is deprecated. '
-                      'Use `PrimaryKeyRelatedField(many=True)` instead.',
-                       DeprecationWarning, stacklevel=2)
-        kwargs['many'] = True
-        super(ManyPrimaryKeyRelatedField, self).__init__(*args, **kwargs)
-
-
-class ManySlugRelatedField(SlugRelatedField):
-    def __init__(self, *args, **kwargs):
-        warnings.warn('`ManySlugRelatedField()` is deprecated. '
-                      'Use `SlugRelatedField(many=True)` instead.',
-                       DeprecationWarning, stacklevel=2)
-        kwargs['many'] = True
-        super(ManySlugRelatedField, self).__init__(*args, **kwargs)
-
-
-class ManyHyperlinkedRelatedField(HyperlinkedRelatedField):
-    def __init__(self, *args, **kwargs):
-        warnings.warn('`ManyHyperlinkedRelatedField()` is deprecated. '
-                      'Use `HyperlinkedRelatedField(many=True)` instead.',
-                       DeprecationWarning, stacklevel=2)
-        kwargs['many'] = True
-        super(ManyHyperlinkedRelatedField, self).__init__(*args, **kwargs)
+        raise NoReverseMatch()

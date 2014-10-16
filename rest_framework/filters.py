@@ -3,8 +3,11 @@ Provides generic filtering backends that can be used to filter the results
 returned by list views.
 """
 from __future__ import unicode_literals
+from django.core.exceptions import ImproperlyConfigured
 from django.db import models
-from rest_framework.compat import django_filters, six
+from django.utils import six
+from rest_framework.compat import django_filters, guardian, get_model_name
+from rest_framework.settings import api_settings
 from functools import reduce
 import operator
 
@@ -42,7 +45,7 @@ class DjangoFilterBackend(BaseFilterBackend):
         if filter_class:
             filter_model = filter_class.Meta.model
 
-            assert issubclass(filter_model, queryset.model), \
+            assert issubclass(queryset.model, filter_model), \
                 'FilterSet model %s does not match queryset model %s' % \
                 (filter_model, queryset.model)
 
@@ -67,7 +70,8 @@ class DjangoFilterBackend(BaseFilterBackend):
 
 
 class SearchFilter(BaseFilterBackend):
-    search_param = 'search'  # The URL query parameter used for the search.
+    # The URL query parameter used for the search.
+    search_param = api_settings.SEARCH_PARAM
 
     def get_search_terms(self, request):
         """
@@ -105,12 +109,17 @@ class SearchFilter(BaseFilterBackend):
 
 
 class OrderingFilter(BaseFilterBackend):
-    ordering_param = 'ordering'  # The URL query parameter used for the ordering.
+    # The URL query parameter used for the ordering.
+    ordering_param = api_settings.ORDERING_PARAM
+    ordering_fields = None
 
     def get_ordering(self, request):
         """
-        Search terms are set by a ?search=... query parameter,
-        and may be comma and/or whitespace delimited.
+        Ordering is set by a comma delimited ?ordering=... query parameter.
+
+        The `ordering` query parameter can be overridden by setting
+        the `ordering_param` value on the OrderingFilter or by
+        specifying an `ORDERING_PARAM` value in the API settings.
         """
         params = request.QUERY_PARAMS.get(self.ordering_param)
         if params:
@@ -122,22 +131,61 @@ class OrderingFilter(BaseFilterBackend):
             return (ordering,)
         return ordering
 
-    def remove_invalid_fields(self, queryset, ordering):
-        field_names = [field.name for field in queryset.model._meta.fields]
-        return [term for term in ordering if term.lstrip('-') in field_names]
+    def remove_invalid_fields(self, queryset, ordering, view):
+        valid_fields = getattr(view, 'ordering_fields', self.ordering_fields)
+
+        if valid_fields is None:
+            # Default to allowing filtering on serializer fields
+            serializer_class = getattr(view, 'serializer_class')
+            if serializer_class is None:
+                msg = ("Cannot use %s on a view which does not have either a "
+                       "'serializer_class' or 'ordering_fields' attribute.")
+                raise ImproperlyConfigured(msg % self.__class__.__name__)
+            valid_fields = [
+                field.source or field_name
+                for field_name, field in serializer_class().fields.items()
+                if not getattr(field, 'write_only', False)
+            ]
+        elif valid_fields == '__all__':
+            # View explictly allows filtering on any model field
+            valid_fields = [field.name for field in queryset.model._meta.fields]
+            valid_fields += queryset.query.aggregates.keys()
+
+        return [term for term in ordering if term.lstrip('-') in valid_fields]
 
     def filter_queryset(self, request, queryset, view):
         ordering = self.get_ordering(request)
 
         if ordering:
             # Skip any incorrect parameters
-            ordering = self.remove_invalid_fields(queryset, ordering)
+            ordering = self.remove_invalid_fields(queryset, ordering, view)
 
         if not ordering:
-            # Use 'ordering' attribtue by default
+            # Use 'ordering' attribute by default
             ordering = self.get_default_ordering(view)
 
         if ordering:
             return queryset.order_by(*ordering)
 
         return queryset
+
+
+class DjangoObjectPermissionsFilter(BaseFilterBackend):
+    """
+    A filter backend that limits results to those where the requesting user
+    has read object level permissions.
+    """
+    def __init__(self):
+        assert guardian, 'Using DjangoObjectPermissionsFilter, but django-guardian is not installed'
+
+    perm_format = '%(app_label)s.view_%(model_name)s'
+
+    def filter_queryset(self, request, queryset, view):
+        user = request.user
+        model_cls = queryset.model
+        kwargs = {
+            'app_label': model_cls._meta.app_label,
+            'model_name': get_model_name(model_cls)
+        }
+        permission = self.perm_format % kwargs
+        return guardian.shortcuts.get_objects_for_user(user, permission, queryset)

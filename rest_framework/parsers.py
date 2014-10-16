@@ -10,9 +10,10 @@ from django.core.files.uploadhandler import StopFutureHandlers
 from django.http import QueryDict
 from django.http.multipartparser import MultiPartParser as DjangoMultiPartParser
 from django.http.multipartparser import MultiPartParserError, parse_header, ChunkIter
-from rest_framework.compat import yaml, etree
+from django.utils import six
+from rest_framework.compat import etree, yaml, force_text, urlparse
 from rest_framework.exceptions import ParseError
-from rest_framework.compat import six
+from rest_framework import renderers
 import json
 import datetime
 import decimal
@@ -47,13 +48,11 @@ class JSONParser(BaseParser):
     """
 
     media_type = 'application/json'
+    renderer_class = renderers.UnicodeJSONRenderer
 
     def parse(self, stream, media_type=None, parser_context=None):
         """
-        Returns a 2-tuple of `(data, files)`.
-
-        `data` will be an object which is the parsed content of the response.
-        `files` will always be `None`.
+        Parses the incoming bytestream as JSON and returns the resulting data.
         """
         parser_context = parser_context or {}
         encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
@@ -74,10 +73,7 @@ class YAMLParser(BaseParser):
 
     def parse(self, stream, media_type=None, parser_context=None):
         """
-        Returns a 2-tuple of `(data, files)`.
-
-        `data` will be an object which is the parsed content of the response.
-        `files` will always be `None`.
+        Parses the incoming bytestream as YAML and returns the resulting data.
         """
         assert yaml, 'YAMLParser requires pyyaml to be installed'
 
@@ -88,7 +84,7 @@ class YAMLParser(BaseParser):
             data = stream.read().decode(encoding)
             return yaml.safe_load(data)
         except (ValueError, yaml.parser.ParserError) as exc:
-            raise ParseError('YAML parse error - %s' % six.u(exc))
+            raise ParseError('YAML parse error - %s' % six.text_type(exc))
 
 
 class FormParser(BaseParser):
@@ -100,10 +96,8 @@ class FormParser(BaseParser):
 
     def parse(self, stream, media_type=None, parser_context=None):
         """
-        Returns a 2-tuple of `(data, files)`.
-
-        `data` will be a :class:`QueryDict` containing all the form parameters.
-        `files` will always be :const:`None`.
+        Parses the incoming bytestream as a URL encoded form,
+        and returns the resulting QueryDict.
         """
         parser_context = parser_context or {}
         encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
@@ -120,7 +114,8 @@ class MultiPartParser(BaseParser):
 
     def parse(self, stream, media_type=None, parser_context=None):
         """
-        Returns a DataAndFiles object.
+        Parses the incoming bytestream as a multipart encoded form,
+        and returns a DataAndFiles object.
 
         `.data` will be a `QueryDict` containing all the form parameters.
         `.files` will be a `QueryDict` containing all the form files.
@@ -128,7 +123,8 @@ class MultiPartParser(BaseParser):
         parser_context = parser_context or {}
         request = parser_context['request']
         encoding = parser_context.get('encoding', settings.DEFAULT_CHARSET)
-        meta = request.META
+        meta = request.META.copy()
+        meta['CONTENT_TYPE'] = media_type
         upload_handlers = request.upload_handlers
 
         try:
@@ -136,7 +132,7 @@ class MultiPartParser(BaseParser):
             data, files = parser.parse()
             return DataAndFiles(data, files)
         except MultiPartParserError as exc:
-            raise ParseError('Multipart form parse error - %s' % six.u(exc))
+            raise ParseError('Multipart form parse error - %s' % str(exc))
 
 
 class XMLParser(BaseParser):
@@ -147,6 +143,9 @@ class XMLParser(BaseParser):
     media_type = 'application/xml'
 
     def parse(self, stream, media_type=None, parser_context=None):
+        """
+        Parses the incoming bytestream as XML and returns the resulting data.
+        """
         assert etree, 'XMLParser requires defusedxml to be installed'
 
         parser_context = parser_context or {}
@@ -155,7 +154,7 @@ class XMLParser(BaseParser):
         try:
             tree = etree.parse(stream, parser=parser, forbid_dtd=True)
         except (etree.ParseError, ValueError) as exc:
-            raise ParseError('XML parse error - %s' % six.u(exc))
+            raise ParseError('XML parse error - %s' % six.text_type(exc))
         data = self._xml_convert(tree.getroot())
 
         return data
@@ -216,7 +215,8 @@ class FileUploadParser(BaseParser):
 
     def parse(self, stream, media_type=None, parser_context=None):
         """
-        Returns a DataAndFiles object.
+        Treats the incoming bytestream as a raw file upload and returns
+        a `DateAndFiles` object.
 
         `.data` will be None (we expect request body to be a file content).
         `.files` will be a `QueryDict` containing one 'file' element.
@@ -289,7 +289,23 @@ class FileUploadParser(BaseParser):
 
         try:
             meta = parser_context['request'].META
-            disposition = parse_header(meta['HTTP_CONTENT_DISPOSITION'])
-            return disposition[1]['filename']
+            disposition = parse_header(meta['HTTP_CONTENT_DISPOSITION'].encode('utf-8'))
+            filename_parm = disposition[1]
+            if 'filename*' in filename_parm:
+                return self.get_encoded_filename(filename_parm)
+            return force_text(filename_parm['filename'])
         except (AttributeError, KeyError):
             pass
+
+    def get_encoded_filename(self, filename_parm):
+        """
+        Handle encoded filenames per RFC6266. See also:
+        http://tools.ietf.org/html/rfc2231#section-4
+        """
+        encoded_filename = force_text(filename_parm['filename*'])
+        try:
+            charset, lang, filename = encoded_filename.split('\'', 2)
+            filename = urlparse.unquote(filename)
+        except (ValueError, LookupError):
+            filename = force_text(filename_parm['filename'])
+        return filename

@@ -2,19 +2,32 @@
 
 # Status Codes
 
-> 418 I'm a teapot - Any attempt to brew coffee with a teapot should result in the error code "418 I'm a teapot". The resulting entity body MAY be short and stout.
+> 418 I'm a teapot - Any attempt to brew coffee with a teapot should result in the error code "418 I'm a teapot".  The resulting entity body MAY be short and stout.
 >
 > &mdash; [RFC 2324][rfc2324], Hyper Text Coffee Pot Control Protocol
 
 Using bare status codes in your responses isn't recommended.  REST framework includes a set of named constants that you can use to make more code more obvious and readable.
 
     from rest_framework import status
+    from rest_framework.response import Response
 
     def empty_view(self):
         content = {'please move along': 'nothing to see here'}
         return Response(content, status=status.HTTP_404_NOT_FOUND)
 
 The full set of HTTP status codes included in the `status` module is listed below.
+
+The module also includes a set of helper functions for testing if a status code is in a given range.
+
+    from rest_framework import status
+	from rest_framework.test import APITestCase
+
+	class ExampleTestCase(APITestCase):
+	    def test_url_root(self):
+	        url = reverse('index')
+	        response = self.client.get(url)
+	        self.assertTrue(status.is_success(response.status_code))
+        
 
 For more information on proper usage of HTTP status codes see [RFC 2616][rfc2616]
 and [RFC 6585][rfc6585].
@@ -53,7 +66,7 @@ This class of status code indicates that further action needs to be taken by the
 
 ## Client Error - 4xx
 
-The 4xx class of status code is intended for cases in which the client seems to have erred. Except when responding to a HEAD request, the server SHOULD include an entity containing an explanation of the error situation, and whether it is a temporary or permanent condition.
+The 4xx class of status code is intended for cases in which the client seems to have erred.  Except when responding to a HEAD request, the server SHOULD include an entity containing an explanation of the error situation, and whether it is a temporary or permanent condition.
 
     HTTP_400_BAD_REQUEST
     HTTP_401_UNAUTHORIZED
@@ -79,7 +92,7 @@ The 4xx class of status code is intended for cases in which the client seems to 
 
 ## Server Error - 5xx
 
-Response status codes beginning with the digit "5" indicate cases in which the server is aware that it has erred or is incapable of performing the request. Except when responding to a HEAD request, the server SHOULD include an entity containing an explanation of the error situation, and whether it is a temporary or permanent condition.
+Response status codes beginning with the digit "5" indicate cases in which the server is aware that it has erred or is incapable of performing the request.  Except when responding to a HEAD request, the server SHOULD include an entity containing an explanation of the error situation, and whether it is a temporary or permanent condition.
 
     HTTP_500_INTERNAL_SERVER_ERROR
     HTTP_501_NOT_IMPLEMENTED
@@ -89,6 +102,15 @@ Response status codes beginning with the digit "5" indicate cases in which the s
     HTTP_505_HTTP_VERSION_NOT_SUPPORTED
     HTTP_511_NETWORK_AUTHENTICATION_REQUIRED
 
+## Helper functions
+
+The following helper functions are available for identifying the category of the response code.
+
+    is_informational()  # 1xx
+    is_success()        # 2xx
+    is_redirect()       # 3xx
+    is_client_error()   # 4xx
+    is_server_error()   # 5xx
 
 [rfc2324]: http://www.ietf.org/rfc/rfc2324.txt
 [rfc2616]: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html

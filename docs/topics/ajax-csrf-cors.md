@@ -1,12 +1,12 @@
 # Working with AJAX, CSRF & CORS
 
-> "Take a close look at possible CSRF / XSRF vulnerabilities on your own websites. They're the worst kind of vulnerability &mdash; very easy to exploit by attackers, yet not so intuitively easy to understand for software developers, at least until you've been bitten by one."
+> "Take a close look at possible CSRF / XSRF vulnerabilities on your own websites.  They're the worst kind of vulnerability &mdash; very easy to exploit by attackers, yet not so intuitively easy to understand for software developers, at least until you've been bitten by one."
 >
 >  &mdash; [Jeff Atwood][cite]
 
 ## Javascript clients
 
-If your building a javascript client to interface with your Web API, you'll need to consider if the client can use the same authentication policy that is used by the rest of the website, and also determine if you need to use CSRF tokens or CORS headers.
+If you’re building a JavaScript client to interface with your Web API, you'll need to consider if the client can use the same authentication policy that is used by the rest of the website, and also determine if you need to use CSRF tokens or CORS headers.
 
 AJAX requests that are made within the same context as the API they are interacting with will typically use `SessionAuthentication`.  This ensures that once a user has logged in, any AJAX requests made can be authenticated using the same session-based authentication that is used for the rest of the website.
 
@@ -23,7 +23,7 @@ To guard against these type of attacks, you need to do two things:
 
 If you're using `SessionAuthentication` you'll need to include valid CSRF tokens for any `POST`, `PUT`, `PATCH` or `DELETE` operations.
 
-The Django documentation describes how to [include CSRF tokens in AJAX requests][csrf-ajax].
+In order to make AJAX requests, you need to include CSRF token in the HTTP header, as [described in the Django documentation][csrf-ajax].
 
 ## CORS
 

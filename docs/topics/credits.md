@@ -124,6 +124,65 @@ The following people have helped make REST framework great.
 * Marlon Bailey - [avinash240]
 * James Summerfield - [jsummerfield]
 * Andy Freeland - [rouge8]
+* Craig de Stigter - [craigds]
+* Pablo Recio - [pyriku]
+* Brian Zambrano - [brianz]
+* Òscar Vilaplana - [grimborg]
+* Ryan Kaskel - [ryankask]
+* Andy McKay - [andymckay]
+* Matteo Suppo - [matteosuppo]
+* Karol Majta - [lolek09]
+* David Jones - [commonorgarden]
+* Andrew Tarzwell - [atarzwell]
+* Michal Dvořák - [mikee2185]
+* Markus Törnqvist - [mjtorn]
+* Pascal Borreli - [pborreli]
+* Alex Burgel - [aburgel]
+* David Medina - [copitux]
+* Areski Belaid - [areski]
+* Ethan Freman - [mindlace]
+* David Sanders - [davesque]
+* Philip Douglas - [freakydug]
+* Igor Kalat - [trwired]
+* Rudolf Olah - [omouse]
+* Gertjan Oude Lohuis - [gertjanol]
+* Matthias Jacob - [cyroxx]
+* Pavel Zinovkin - [pzinovkin]
+* Will Kahn-Greene - [willkg]
+* Kevin Brown - [kevin-brown]
+* Rodrigo Martell - [coderigo]
+* James Rutherford - [jimr]
+* Ricky Rosario - [rlr]
+* Veronica Lynn - [kolvia]
+* Dan Stephenson - [etos]
+* Martin Clement - [martync]
+* Jeremy Satterfield - [jsatt]
+* Christopher Paolini - [chrispaolini]
+* Filipe A Ximenes - [filipeximenes]
+* Ramiro Morales - [ramiro]
+* Krzysztof Jurewicz - [krzysiekj]
+* Eric Buehl - [ericbuehl]
+* Kristian Øllegaard - [kristianoellegaard]
+* Alexander Akhmetov - [alexander-akhmetov]
+* Andrey Antukh - [niwibe]
+* Mathieu Pillard - [diox]
+* Edmond Wong - [edmondwong]
+* Ben Reilly - [bwreilly]
+* Tai Lee - [mrmachine]
+* Markus Kaiserswerth - [mkai]
+* Henry Clifford - [hcliff]
+* Thomas Badaud - [badale]
+* Colin Huang - [tamakisquare]
+* Ross McFarland - [ross]
+* Jacek Bzdak - [jbzdak]
+* Alexander Lukanin - [alexanderlukanin13]
+* Yamila Moreno - [yamila-moreno]
+* Rob Hudson - [robhudson]
+* Alex Good - [alexjg]
+* Ian Foote - [ian-foote]
+* Chuck Harmston - [chuckharmston]
+* Philip Forget - [philipforget]
+* Artem Mezhenin - [amezhenin]
 
 Many thanks to everyone who's contributed to the project.
 
@@ -284,3 +343,62 @@ You can also contact [@_tomchristie][twitter] directly on twitter.
 [avinash240]: https://github.com/avinash240
 [jsummerfield]: https://github.com/jsummerfield
 [rouge8]: https://github.com/rouge8
+[craigds]: https://github.com/craigds
+[pyriku]: https://github.com/pyriku
+[brianz]: https://github.com/brianz
+[grimborg]: https://github.com/grimborg
+[ryankask]: https://github.com/ryankask
+[andymckay]: https://github.com/andymckay
+[matteosuppo]: https://github.com/matteosuppo
+[lolek09]: https://github.com/lolek09
+[commonorgarden]: https://github.com/commonorgarden
+[atarzwell]: https://github.com/atarzwell
+[mikee2185]: https://github.com/mikee2185
+[mjtorn]: https://github.com/mjtorn
+[pborreli]: https://github.com/pborreli
+[aburgel]: https://github.com/aburgel
+[copitux]: https://github.com/copitux
+[areski]: https://github.com/areski
+[mindlace]: https://github.com/mindlace
+[davesque]: https://github.com/davesque
+[freakydug]: https://github.com/freakydug
+[trwired]: https://github.com/trwired
+[omouse]: https://github.com/omouse
+[gertjanol]: https://github.com/gertjanol
+[cyroxx]: https://github.com/cyroxx
+[pzinovkin]: https://github.com/pzinovkin
+[coderigo]: https://github.com/coderigo
+[willkg]: https://github.com/willkg
+[kevin-brown]: https://github.com/kevin-brown
+[jimr]: https://github.com/jimr
+[rlr]: https://github.com/rlr
+[kolvia]: https://github.com/kolvia
+[etos]: https://github.com/etos
+[martync]: https://github.com/martync
+[jsatt]: https://github.com/jsatt
+[chrispaolini]: https://github.com/chrispaolini
+[filipeximenes]: https://github.com/filipeximenes
+[ramiro]: https://github.com/ramiro
+[krzysiekj]: https://github.com/krzysiekj
+[ericbuehl]: https://github.com/ericbuehl
+[kristianoellegaard]: https://github.com/kristianoellegaard
+[alexander-akhmetov]: https://github.com/alexander-akhmetov
+[niwibe]: https://github.com/niwibe
+[diox]: https://github.com/diox
+[edmondwong]: https://github.com/edmondwong
+[bwreilly]: https://github.com/bwreilly
+[mrmachine]: https://github.com/mrmachine
+[mkai]: https://github.com/mkai
+[hcliff]: https://github.com/hcliff
+[badale]: https://github.com/badale
+[tamakisquare]: https://github.com/tamakisquare
+[ross]: https://github.com/ross
+[jbzdak]: https://github.com/jbzdak
+[alexanderlukanin13]: https://github.com/alexanderlukanin13
+[yamila-moreno]: https://github.com/yamila-moreno
+[robhudson]: https://github.com/robhudson
+[alexjg]: https://github.com/alexjg
+[ian-foote]: https://github.com/ian-foote
+[chuckharmston]: https://github.com/chuckharmston
+[philipforget]: https://github.com/philipforget
+[amezhenin]: https://github.com/amezhenin

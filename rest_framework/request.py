@@ -28,6 +28,36 @@ def is_form_media_type(media_type):
             base_media_type == 'multipart/form-data')
 
 
+class override_method(object):
+    """
+    A context manager that temporarily overrides the method on a request,
+    additionally setting the `view.request` attribute.
+
+    Usage:
+
+        with override_method(view, request, 'POST') as request:
+            ... # Do stuff with `view` and `request`
+    """
+    def __init__(self, view, request, method):
+        self.view = view
+        self.request = request
+        self.method = method
+        self.action = getattr(view, 'action', None)
+
+    def __enter__(self):
+        self.view.request = clone_request(self.request, self.method)
+        if self.action is not None:
+            # For viewsets we also set the `.action` attribute.
+            action_map = getattr(self.view, 'action_map', {})
+            self.view.action = action_map.get(self.method.lower())
+        return self.view.request
+
+    def __exit__(self, *args, **kwarg):
+        self.view.request = self.request
+        if self.action is not None:
+            self.view.action = self.action
+
+
 class Empty(object):
     """
     Placeholder for unset attributes.
@@ -64,6 +94,20 @@ def clone_request(request, method):
     return ret
 
 
+class ForcedAuthentication(object):
+    """
+    This authentication class is used if the test client or request factory
+    forcibly authenticated the request.
+    """
+
+    def __init__(self, force_user, force_token):
+        self.force_user = force_user
+        self.force_token = force_token
+
+    def authenticate(self, request):
+        return (self.force_user, self.force_token)
+
+
 class Request(object):
     """
     Wrapper allowing to enhance a standard `HttpRequest` instance.
@@ -97,6 +141,12 @@ class Request(object):
             self.parser_context = {}
         self.parser_context['request'] = self
         self.parser_context['encoding'] = request.encoding or settings.DEFAULT_CHARSET
+
+        force_user = getattr(request, '_force_auth_user', None)
+        force_token = getattr(request, '_force_auth_token', None)
+        if (force_user is not None or force_token is not None):
+            forced_auth = ForcedAuthentication(force_user, force_token)
+            self.authenticators = (forced_auth,)
 
     def _default_negotiator(self):
         return api_settings.DEFAULT_CONTENT_NEGOTIATION_CLASS()
@@ -173,14 +223,14 @@ class Request(object):
         by the authentication classes provided to the request.
         """
         if not hasattr(self, '_user'):
-            self._authenticator, self._user, self._auth = self._authenticate()
+            self._authenticate()
         return self._user
 
     @user.setter
     def user(self, value):
         """
         Sets the user on the current request. This is necessary to maintain
-        compatilbility with django.contrib.auth where the user proprety is
+        compatibility with django.contrib.auth where the user property is
         set in the login and logout functions.
         """
         self._user = value
@@ -192,7 +242,7 @@ class Request(object):
         request, such as an authentication token.
         """
         if not hasattr(self, '_auth'):
-            self._authenticator, self._user, self._auth = self._authenticate()
+            self._authenticate()
         return self._auth
 
     @auth.setter
@@ -210,7 +260,7 @@ class Request(object):
         to authenticate the request, or `None`.
         """
         if not hasattr(self, '_authenticator'):
-            self._authenticator, self._user, self._auth = self._authenticate()
+            self._authenticate()
         return self._authenticator
 
     def _load_data_and_files(self):
@@ -236,18 +286,20 @@ class Request(object):
         if not _hasattr(self, '_method'):
             self._method = self._request.method
 
-            if self._method == 'POST':
-                # Allow X-HTTP-METHOD-OVERRIDE header
-                self._method = self.META.get('HTTP_X_HTTP_METHOD_OVERRIDE',
-                                             self._method)
+            # Allow X-HTTP-METHOD-OVERRIDE header
+            if 'HTTP_X_HTTP_METHOD_OVERRIDE' in self.META:
+                self._method = self.META['HTTP_X_HTTP_METHOD_OVERRIDE'].upper()
 
     def _load_stream(self):
         """
         Return the content body of the request, as a stream.
         """
         try:
-            content_length = int(self.META.get('CONTENT_LENGTH',
-                                    self.META.get('HTTP_CONTENT_LENGTH')))
+            content_length = int(
+                self.META.get(
+                    'CONTENT_LENGTH', self.META.get('HTTP_CONTENT_LENGTH')
+                )
+            )
         except (ValueError, TypeError):
             content_length = 0
 
@@ -271,9 +323,11 @@ class Request(object):
         )
 
         # We only need to use form overloading on form POST requests.
-        if (not USE_FORM_OVERLOADING
+        if (
+            not USE_FORM_OVERLOADING
             or self._request.method != 'POST'
-            or not is_form_media_type(self._content_type)):
+            or not is_form_media_type(self._content_type)
+        ):
             return
 
         # At this point we're committed to parsing the request as form data.
@@ -281,17 +335,21 @@ class Request(object):
         self._files = self._request.FILES
 
         # Method overloading - change the method and remove the param from the content.
-        if (self._METHOD_PARAM and
-            self._METHOD_PARAM in self._data):
+        if (
+            self._METHOD_PARAM and
+            self._METHOD_PARAM in self._data
+        ):
             self._method = self._data[self._METHOD_PARAM].upper()
 
         # Content overloading - modify the content type, and force re-parse.
-        if (self._CONTENT_PARAM and
+        if (
+            self._CONTENT_PARAM and
             self._CONTENTTYPE_PARAM and
             self._CONTENT_PARAM in self._data and
-            self._CONTENTTYPE_PARAM in self._data):
+            self._CONTENTTYPE_PARAM in self._data
+        ):
             self._content_type = self._data[self._CONTENTTYPE_PARAM]
-            self._stream = BytesIO(self._data[self._CONTENT_PARAM].encode(HTTP_HEADER_ENCODING))
+            self._stream = BytesIO(self._data[self._CONTENT_PARAM].encode(self.parser_context['encoding']))
             self._data, self._files = (Empty, Empty)
 
     def _parse(self):
@@ -304,7 +362,7 @@ class Request(object):
         media_type = self.content_type
 
         if stream is None or media_type is None:
-            empty_data = QueryDict('', self._request._encoding)
+            empty_data = QueryDict('', encoding=self._request._encoding)
             empty_files = MultiValueDict()
             return (empty_data, empty_files)
 
@@ -313,7 +371,16 @@ class Request(object):
         if not parser:
             raise exceptions.UnsupportedMediaType(media_type)
 
-        parsed = parser.parse(stream, media_type, self.parser_context)
+        try:
+            parsed = parser.parse(stream, media_type, self.parser_context)
+        except:
+            # If we get an exception during parsing, fill in empty data and
+            # re-raise.  Ensures we don't simply repeat the error when
+            # attempting to render the browsable renderer response, or when
+            # logging the request or similar.
+            self._data = QueryDict('', encoding=self._request._encoding)
+            self._files = MultiValueDict()
+            raise
 
         # Parser classes may return the raw data, or a
         # DataAndFiles object.  Unpack the result as required.
@@ -330,11 +397,18 @@ class Request(object):
         Returns a three-tuple of (authenticator, user, authtoken).
         """
         for authenticator in self.authenticators:
-            user_auth_tuple = authenticator.authenticate(self)
-            if not user_auth_tuple is None:
-                user, auth = user_auth_tuple
-                return (authenticator, user, auth)
-        return self._not_authenticated()
+            try:
+                user_auth_tuple = authenticator.authenticate(self)
+            except exceptions.APIException:
+                self._not_authenticated()
+                raise
+
+            if user_auth_tuple is not None:
+                self._authenticator = authenticator
+                self._user, self._auth = user_auth_tuple
+                return
+
+        self._not_authenticated()
 
     def _not_authenticated(self):
         """
@@ -343,17 +417,17 @@ class Request(object):
 
         By default this will be (None, AnonymousUser, None).
         """
+        self._authenticator = None
+
         if api_settings.UNAUTHENTICATED_USER:
-            user = api_settings.UNAUTHENTICATED_USER()
+            self._user = api_settings.UNAUTHENTICATED_USER()
         else:
-            user = None
+            self._user = None
 
         if api_settings.UNAUTHENTICATED_TOKEN:
-            auth = api_settings.UNAUTHENTICATED_TOKEN()
+            self._auth = api_settings.UNAUTHENTICATED_TOKEN()
         else:
-            auth = None
-
-        return (None, user, auth)
+            self._auth = None
 
     def __getattr__(self, attr):
         """

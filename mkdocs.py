@@ -18,8 +18,8 @@ if local:
     suffix = '.html'
     index = 'index.html'
 else:
-    base_url = 'http://django-rest-framework.org'
-    suffix = '.html'
+    base_url = 'http://www.django-rest-framework.org'
+    suffix = ''
     index = ''
 
 
@@ -69,15 +69,19 @@ path_list = [
     'api-guide/reverse.md',
     'api-guide/exceptions.md',
     'api-guide/status-codes.md',
+    'api-guide/testing.md',
     'api-guide/settings.md',
+    'topics/documenting-your-api.md',
     'topics/ajax-csrf-cors.md',
     'topics/browser-enhancements.md',
     'topics/browsable-api.md',
     'topics/rest-hypermedia-hateoas.md',
+    'topics/third-party-resources.md',
     'topics/contributing.md',
     'topics/rest-framework-2-announcement.md',
     'topics/2.2-announcement.md',
     'topics/2.3-announcement.md',
+    'topics/2.4-announcement.md',
     'topics/release-notes.md',
     'topics/credits.md',
 ]
@@ -88,7 +92,10 @@ for idx in range(len(path_list)):
     path = path_list[idx]
     rel = '../' * path.count('/')
 
-    if idx > 0:
+    if idx == 1 and not local:
+        # Link back to '/', not '/index'
+        prev_url_map[path] = '/'
+    elif idx > 0:
         prev_url_map[path] = rel + path_list[idx - 1][:-3] + suffix
 
     if idx < len(path_list) - 1:
@@ -137,10 +144,14 @@ for (dirpath, dirnames, filenames) in os.walk(docs_dir):
             toc += template + '\n'
 
         if filename == 'index.md':
-            main_title = 'Django REST framework - APIs made easy'
+            main_title = 'Django REST framework - Web APIs for Django'
         else:
-            main_title = 'Django REST framework - ' + main_title
+            main_title = main_title + ' - Django REST framework'
 
+        if relative_path == 'index.md':
+            canonical_url = base_url
+        else:
+            canonical_url = base_url + '/' + relative_path[:-3] + suffix
         prev_url = prev_url_map.get(relative_path)
         next_url = next_url_map.get(relative_path)
 
@@ -150,6 +161,13 @@ for (dirpath, dirnames, filenames) in os.walk(docs_dir):
         output = output.replace('{{ title }}', main_title)
         output = output.replace('{{ description }}', description)
         output = output.replace('{{ page_id }}', filename[:-3])
+        output = output.replace('{{ canonical_url }}', canonical_url)
+
+        if filename =='index.md':
+            output = output.replace('{{ ad_block }}', """<hr/>
+              <script type="text/javascript" src="//cdn.fusionads.net/fusion.js?zoneid=1332&serve=C6SDP2Y&placement=djangorestframework" id="_fusionads_js"></script>""")
+        else:
+            output = output.replace('{{ ad_block }}', '')
 
         if prev_url:
             output = output.replace('{{ prev_url }}', prev_url)

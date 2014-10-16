@@ -3,14 +3,14 @@ Provides various authentication policies.
 """
 from __future__ import unicode_literals
 import base64
-from datetime import datetime
 
 from django.contrib.auth import authenticate
 from django.core.exceptions import ImproperlyConfigured
+from django.middleware.csrf import CsrfViewMiddleware
+from django.conf import settings
 from rest_framework import exceptions, HTTP_HEADER_ENCODING
-from rest_framework.compat import CsrfViewMiddleware
 from rest_framework.compat import oauth, oauth_provider, oauth_provider_store
-from rest_framework.compat import oauth2_provider
+from rest_framework.compat import oauth2_provider, provider_now, check_nonce
 from rest_framework.authtoken.models import Token
 
 
@@ -21,10 +21,16 @@ def get_authorization_header(request):
     Hide some test client ickyness where the header can be unicode.
     """
     auth = request.META.get('HTTP_AUTHORIZATION', b'')
-    if type(auth) == type(''):
+    if isinstance(auth, type('')):
         # Work around django test client oddness
         auth = auth.encode(HTTP_HEADER_ENCODING)
     return auth
+
+
+class CSRFCheck(CsrfViewMiddleware):
+    def _reject(self, request, reason):
+        # Return the failure reason instead of an HttpResponse
+        return reason
 
 
 class BaseAuthentication(object):
@@ -104,26 +110,26 @@ class SessionAuthentication(BaseAuthentication):
         """
 
         # Get the underlying HttpRequest object
-        http_request = request._request
-        user = getattr(http_request, 'user', None)
+        request = request._request
+        user = getattr(request, 'user', None)
 
         # Unauthenticated, CSRF validation not required
         if not user or not user.is_active:
             return None
 
-        # Enforce CSRF validation for session based authentication.
-        class CSRFCheck(CsrfViewMiddleware):
-            def _reject(self, request, reason):
-                # Return the failure reason instead of an HttpResponse
-                return reason
-
-        reason = CSRFCheck().process_view(http_request, None, (), {})
-        if reason:
-            # CSRF failed, bail with explicit error message
-            raise exceptions.AuthenticationFailed('CSRF Failed: %s' % reason)
+        self.enforce_csrf(request)
 
         # CSRF passed with authenticated user
         return (user, None)
+
+    def enforce_csrf(self, request):
+        """
+        Enforce CSRF validation for session based authentication.
+        """
+        reason = CSRFCheck().process_view(request, None, (), {})
+        if reason:
+            # CSRF failed, bail with explicit error message
+            raise exceptions.AuthenticationFailed('CSRF Failed: %s' % reason)
 
 
 class TokenAuthentication(BaseAuthentication):
@@ -230,8 +236,9 @@ class OAuthAuthentication(BaseAuthentication):
         try:
             consumer_key = oauth_request.get_parameter('oauth_consumer_key')
             consumer = oauth_provider_store.get_consumer(request, oauth_request, consumer_key)
-        except oauth_provider.store.InvalidConsumerError as err:
-            raise exceptions.AuthenticationFailed(err)
+        except oauth_provider.store.InvalidConsumerError:
+            msg = 'Invalid consumer token: %s' % oauth_request.get_parameter('oauth_consumer_key')
+            raise exceptions.AuthenticationFailed(msg)
 
         if consumer.status != oauth_provider.consts.ACCEPTED:
             msg = 'Invalid consumer key status: %s' % consumer.get_status_display()
@@ -275,7 +282,9 @@ class OAuthAuthentication(BaseAuthentication):
         """
         Checks nonce of request, and return True if valid.
         """
-        return oauth_provider_store.check_nonce(request, oauth_request, oauth_request['oauth_nonce'])
+        oauth_nonce = oauth_request['oauth_nonce']
+        oauth_timestamp = oauth_request['oauth_timestamp']
+        return check_nonce(request, oauth_request, oauth_nonce, oauth_timestamp)
 
 
 class OAuth2Authentication(BaseAuthentication):
@@ -283,6 +292,7 @@ class OAuth2Authentication(BaseAuthentication):
     OAuth 2 authentication backend using `django-oauth2-provider`
     """
     www_authenticate_realm = 'api'
+    allow_query_params_token = settings.DEBUG
 
     def __init__(self, *args, **kwargs):
         super(OAuth2Authentication, self).__init__(*args, **kwargs)
@@ -300,9 +310,6 @@ class OAuth2Authentication(BaseAuthentication):
 
         auth = get_authorization_header(request).split()
 
-        if not auth or auth[0].lower() != b'bearer':
-            return None
-
         if len(auth) == 1:
             msg = 'Invalid bearer header. No credentials provided.'
             raise exceptions.AuthenticationFailed(msg)
@@ -310,7 +317,16 @@ class OAuth2Authentication(BaseAuthentication):
             msg = 'Invalid bearer header. Token string should not contain spaces.'
             raise exceptions.AuthenticationFailed(msg)
 
-        return self.authenticate_credentials(request, auth[1])
+        if auth and auth[0].lower() == b'bearer':
+            access_token = auth[1]
+        elif 'access_token' in request.POST:
+            access_token = request.POST['access_token']
+        elif 'access_token' in request.GET and self.allow_query_params_token:
+            access_token = request.GET['access_token']
+        else:
+            return None
+
+        return self.authenticate_credentials(request, access_token)
 
     def authenticate_credentials(self, request, access_token):
         """
@@ -318,17 +334,17 @@ class OAuth2Authentication(BaseAuthentication):
         """
 
         try:
-            token = oauth2_provider.models.AccessToken.objects.select_related('user')
-            # TODO: Change to timezone aware datetime when oauth2_provider add
-            # support to it.
-            token = token.get(token=access_token, expires__gt=datetime.now())
-        except oauth2_provider.models.AccessToken.DoesNotExist:
+            token = oauth2_provider.oauth2.models.AccessToken.objects.select_related('user')
+            # provider_now switches to timezone aware datetime when
+            # the oauth2_provider version supports to it.
+            token = token.get(token=access_token, expires__gt=provider_now())
+        except oauth2_provider.oauth2.models.AccessToken.DoesNotExist:
             raise exceptions.AuthenticationFailed('Invalid token')
 
         user = token.user
 
         if not user.is_active:
-            msg = 'User inactive or deleted: %s' % user.username
+            msg = 'User inactive or deleted: %s' % user.get_username()
             raise exceptions.AuthenticationFailed(msg)
 
         return (user, token)

@@ -2,8 +2,11 @@
 Helper classes for parsers.
 """
 from __future__ import unicode_literals
+from django.utils import timezone
+from django.db.models.query import QuerySet
 from django.utils.datastructures import SortedDict
-from rest_framework.compat import timezone
+from django.utils.functional import Promise
+from rest_framework.compat import force_text
 from rest_framework.serializers import DictWithMetadata, SortedDictWithMetadata
 import datetime
 import decimal
@@ -19,7 +22,9 @@ class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         # For Date Time string spec, see ECMA 262
         # http://ecma-international.org/ecma-262/5.1/#sec-15.9.1.15
-        if isinstance(o, datetime.datetime):
+        if isinstance(o, Promise):
+            return force_text(o)
+        elif isinstance(o, datetime.datetime):
             r = o.isoformat()
             if o.microsecond:
                 r = r[:23] + r[26:]
@@ -39,6 +44,15 @@ class JSONEncoder(json.JSONEncoder):
             return str(o.total_seconds())
         elif isinstance(o, decimal.Decimal):
             return str(o)
+        elif isinstance(o, QuerySet):
+            return list(o)
+        elif hasattr(o, 'tolist'):
+            return o.tolist()
+        elif hasattr(o, '__getitem__'):
+            try:
+                return dict(o)
+            except:
+                pass
         elif hasattr(o, '__iter__'):
             return [i for i in o]
         return super(JSONEncoder, self).default(o)
@@ -84,11 +98,23 @@ else:
                     node.flow_style = best_style
             return node
 
-    SafeDumper.add_representer(SortedDict,
-            yaml.representer.SafeRepresenter.represent_dict)
-    SafeDumper.add_representer(DictWithMetadata,
-            yaml.representer.SafeRepresenter.represent_dict)
-    SafeDumper.add_representer(SortedDictWithMetadata,
-            yaml.representer.SafeRepresenter.represent_dict)
-    SafeDumper.add_representer(types.GeneratorType,
-            yaml.representer.SafeRepresenter.represent_list)
+    SafeDumper.add_representer(
+        decimal.Decimal,
+        SafeDumper.represent_decimal
+    )
+    SafeDumper.add_representer(
+        SortedDict,
+        yaml.representer.SafeRepresenter.represent_dict
+    )
+    SafeDumper.add_representer(
+        DictWithMetadata,
+        yaml.representer.SafeRepresenter.represent_dict
+    )
+    SafeDumper.add_representer(
+        SortedDictWithMetadata,
+        yaml.representer.SafeRepresenter.represent_dict
+    )
+    SafeDumper.add_representer(
+        types.GeneratorType,
+        yaml.representer.SafeRepresenter.represent_list
+    )

@@ -10,7 +10,7 @@ Minor version numbers (0.0.x) are used for changes that are API compatible.  You
 
 Medium version numbers (0.x.0) may include API changes, in line with the [deprecation policy][deprecation-policy].  You should read the release notes carefully before upgrading between medium point releases.
 
-Major version numbers (x.0.0) are reserved for substantial project milestones.  No major point releases are currently planned.
+Major version numbers (x.0.0) are reserved for substantial project milestones.
 
 ## Deprecation policy
 
@@ -38,20 +38,241 @@ You can determine your currently installed version using `pip freeze`:
 
 ---
 
+## 2.4.x series
+
+### 2.4.3
+
+**Date**: [19th September 2014](https://github.com/tomchristie/django-rest-framework/issues?q=milestone%3A%222.4.3+Release%22+).
+
+* Support translatable view docstrings being displayed in the browsable API.
+* Support [encoded `filename*`][rfc-6266] in raw file uploads with `FileUploadParser`.
+* Allow routers to support viewsets that don't include any list routes or that don't include any detail routes.
+* Don't render an empty login control in browsable API if `login` view is not included.
+* CSRF exemption performed in `.as_view()` to prevent accidental omission if overriding `.dispatch()`.
+* Login on browsable API now displays validation errors.
+* Bugfix: Fix migration in `authtoken` application.
+* Bugfix: Allow selection of integer keys in nested choices.
+* Bugfix: Return `None` instead of `'None'` in `CharField` with `allow_none=True`.
+* Bugfix: Ensure custom model fields map to equivelent serializer fields more reliably. 
+* Bugfix: `DjangoFilterBackend` no longer quietly changes queryset ordering.
+
+### 2.4.2
+
+**Date**: [3rd September 2014](https://github.com/tomchristie/django-rest-framework/issues?q=milestone%3A%222.4.2+Release%22+).
+
+* Bugfix: Fix broken pagination for 2.4.x series.
+
+### 2.4.1
+
+**Date**: [1st September 2014](https://github.com/tomchristie/django-rest-framework/issues?q=milestone%3A%222.4.1+Release%22+).
+
+* Bugfix: Fix broken login template for browsable API.
+
+### 2.4.0
+
+**Date**: [29th August 2014](https://github.com/tomchristie/django-rest-framework/issues?q=milestone%3A%222.4.0+Release%22+).
+
+**Django version requirements**: The lowest supported version of Django is now 1.4.2.
+
+**South version requirements**: This note applies to any users using the optional `authtoken` application, which includes an associated database migration. You must now *either* upgrade your `south` package to version 1.0, *or* instead use the built-in migration support available with Django 1.7.
+
+* Added compatibility with Django 1.7's database migration support.
+* New test runner, using `py.test`.
+* Deprecated `.model` view attribute in favor of explicit `.queryset` and `.serializer_class` attributes. The `DEFAULT_MODEL_SERIALIZER_CLASS` setting is also deprecated.
+* `@detail_route` and `@list_route` decorators replace `@action` and `@link`.
+* Support customizable view name and description functions, using the `VIEW_NAME_FUNCTION` and `VIEW_DESCRIPTION_FUNCTION` settings.
+* Added `NUM_PROXIES` setting for smarter client IP identification.
+* Added `MAX_PAGINATE_BY` setting and `max_paginate_by` generic view attribute.
+* Added `Retry-After` header to throttled responses, as per [RFC 6585](http://tools.ietf.org/html/rfc6585). This should now be used in preference to the custom `X-Trottle-Wait-Seconds` header which will be fully deprecated in 3.0.
+* Added `cache` attribute to throttles to allow overriding of default cache.
+* Added `lookup_value_regex` attribute to routers, to allow the URL argument matching to be constrainted by the user.
+* Added `allow_none` option to `CharField`.
+* Support Django's standard `status_code` class attribute on responses.
+* More intuitive behavior on the test client, as `client.logout()` now also removes any credentials that have been set.
+* Bugfix: `?page_size=0` query parameter now falls back to default page size for view, instead of always turning pagination off.
+* Bugfix: Always uppercase `X-Http-Method-Override` methods.
+* Bugfix: Copy `filter_backends` list before returning it, in order to prevent view code from mutating the class attribute itself.
+* Bugfix: Set the `.action` attribute on viewsets when introspected by `OPTIONS` for testing permissions on the view.
+* Bugfix: Ensure `ValueError` raised during deserialization results in a error list rather than a single error. This is now consistent with other validation errors.
+* Bugfix: Fix `cache_format` typo on throttle classes, was `"throtte_%(scope)s_%(ident)s"`. Note that this will invalidate existing throttle caches.
+
+---
+
 ## 2.3.x series
 
-### Master
+### 2.3.14
 
+**Date**: 12th June 2014
+
+* **Security fix**: Escape request path when it is include as part of the login and logout links in the browsable API.
+* `help_text` and `verbose_name` automatically set for related fields on `ModelSerializer`.
+* Fix nested serializers linked through a backward foreign key relation.
+* Fix bad links for the `BrowsableAPIRenderer` with `YAMLRenderer`.
+* Add `UnicodeYAMLRenderer` that extends `YAMLRenderer` with unicode.
+* Fix `parse_header` argument convertion.
+* Fix mediatype detection under Python 3.
+* Web browseable API now offers blank option on dropdown when the field is not required.
+* `APIException` representation improved for logging purposes.
+* Allow source="*" within nested serializers.
+* Better support for custom oauth2 provider backends.
+* Fix field validation if it's optional and has no value.
+* Add `SEARCH_PARAM` and `ORDERING_PARAM`.
+* Fix `APIRequestFactory` to support arguments within the url string for GET.
+* Allow three transport modes for access tokens when accessing a protected resource.
+* Fix `QueryDict` encoding on request objects.
+* Ensure throttle keys do not contain spaces, as those are invalid if using `memcached`.
+* Support `blank_display_value` on `ChoiceField`.
+
+### 2.3.13
+
+**Date**: 6th March 2014
+
+* Django 1.7 Support.
+* Fix `default` argument when used with serializer relation fields.
+* Display the media type of the content that is being displayed in the browsable API, rather than 'text/html'.
+* Bugfix for `urlize` template failure when URL regex is matched, but value does not `urlparse`.
+* Use `urandom` for token generation.
+* Only use `Vary: Accept` when more than one renderer exists.
+
+### 2.3.12
+
+**Date**: 15th January 2014
+
+* **Security fix**: `OrderingField` now only allows ordering on readable serializer fields, or on fields explicitly specified using `ordering_fields`. This prevents users being able to order by fields that are not visible in the API, and exploiting the ordering of sensitive data such as password hashes.
+* Bugfix: `write_only = True` fields now display in the browsable API.
+
+### 2.3.11
+
+**Date**: 14th January 2014
+
+* Added `write_only` serializer field argument.
+* Added `write_only_fields` option to `ModelSerializer` classes.
+* JSON renderer now deals with objects that implement a dict-like interface.
+* Fix compatiblity with newer versions of `django-oauth-plus`.
+* Bugfix: Refine behavior that calls model manager `all()` across nested serializer relationships, preventing erronous behavior with some non-ORM objects, and preventing unneccessary queryset re-evaluations.
+* Bugfix: Allow defaults on BooleanFields to be properly honored when values are not supplied.
+* Bugfix: Prevent double-escaping of non-latin1 URL query params when appending `format=json` params.
+
+### 2.3.10
+
+**Date**: 6th December 2013
+
+* Add in choices information for ChoiceFields in response to `OPTIONS` requests.
+* Added `pre_delete()` and `post_delete()` method hooks.
+* Added status code category helper functions.
+* Bugfix: Partial updates which erronously set a related field to `None` now correctly fail validation instead of raising an exception.
+* Bugfix: Responses without any content no longer include an HTTP `'Content-Type'` header.
+* Bugfix: Correctly handle validation errors in PUT-as-create case, responding with 400.
+
+### 2.3.9
+
+**Date**: 15th November 2013
+
+* Fix Django 1.6 exception API compatibility issue caused by `ValidationError`.
+* Include errors in HTML forms in browsable API.
+* Added JSON renderer support for numpy scalars.
+* Added `transform_<fieldname>` hooks on serializers for easily modifying field output.
+* Added `get_context` hook in `BrowsableAPIRenderer`.
+* Allow serializers to be passed `files` but no `data`.
+* `HTMLFormRenderer` now renders serializers directly to HTML without needing to create an intermediate form object.
+* Added `get_filter_backends` hook.
+* Added queryset aggregates to allowed fields in `OrderingFilter`.
+* Bugfix: Fix decimal suppoprt with `YAMLRenderer`.
+* Bugfix: Fix submission of unicode in browsable API through raw data form.
+
+### 2.3.8
+
+**Date**: 11th September 2013
+
+* Added `DjangoObjectPermissions`, and `DjangoObjectPermissionsFilter`.
+* Support customizable exception handling, using the `EXCEPTION_HANDLER` setting.
+* Support customizable view name and description functions, using the `VIEW_NAME_FUNCTION` and `VIEW_DESCRIPTION_FUNCTION` settings.
+* Added `MAX_PAGINATE_BY` setting and `max_paginate_by` generic view attribute.
+* Added `cache` attribute to throttles to allow overriding of default cache.
+* 'Raw data' tab in browsable API now contains pre-populated data.
+* 'Raw data' and 'HTML form' tab preference in browseable API now saved between page views.
+* Bugfix: `required=True` argument fixed for boolean serializer fields.
+* Bugfix: `client.force_authenticate(None)` should also clear session info if it exists.
+* Bugfix: Client sending empty string instead of file now clears `FileField`.
+* Bugfix: Empty values on ChoiceFields with `required=False` now consistently return `None`.
+* Bugfix: Clients setting `page_size=0` now simply returns the default page size, instead of disabling pagination. [*]
+
+---
+
+[*] Note that the change in `page_size=0` behaviour fixes what is considered to be a bug in how clients can effect the pagination size.  However if you were relying on this behavior you will need to add the following mixin to your list views in order to preserve the existing behavior.
+
+    class DisablePaginationMixin(object):
+        def get_paginate_by(self, queryset=None):
+            if self.request.QUERY_PARAMS[self.paginate_by_param] == '0':
+                return None
+            return super(DisablePaginationMixin, self).get_paginate_by(queryset)
+
+---
+
+### 2.3.7
+
+**Date**: 16th August 2013
+
+* Added `APITestClient`, `APIRequestFactory` and `APITestCase` etc...
+* Refactor `SessionAuthentication` to allow esier override for CSRF exemption.
+* Remove 'Hold down "Control" message from help_text' widget messaging when not appropriate.
+* Added admin configuration for auth tokens.
+* Bugfix: `AnonRateThrottle` fixed to not throttle authenticated users.
+* Bugfix: Don't set `X-Throttle-Wait-Seconds` when throttle does not have `wait` value.
+* Bugfix: Fixed `PATCH` button title in browsable API.
+* Bugfix: Fix issue with OAuth2 provider naive datetimes.
+
+### 2.3.6
+
+**Date**: 27th June 2013
+
+* Added `trailing_slash` option to routers.
+* Include support for `HttpStreamingResponse`.
+* Support wider range of default serializer validation when used with custom model fields.
+* UTF-8 Support for browsable API descriptions.
+* OAuth2 provider uses timezone aware datetimes when supported.
+* Bugfix: Return error correctly when OAuth non-existent consumer occurs.
+* Bugfix: Allow `FileUploadParser` to correctly filename if provided as URL kwarg.
+* Bugfix: Fix `ScopedRateThrottle`.
+
+### 2.3.5
+
+**Date**: 3rd June 2013
+
+* Added `get_url` hook to `HyperlinkedIdentityField`.
+* Serializer field `default` argument may be a callable.
+* `@action` decorator now accepts a `methods` argument.
+* Bugfix: `request.user` should be still be accessible in renderer context if authentication fails.
+* Bugfix: The `lookup_field` option on `HyperlinkedIdentityField` should apply by default to the url field on the serializer.
+* Bugfix: `HyperlinkedIdentityField` should continue to support `pk_url_kwarg`, `slug_url_kwarg`, `slug_field`, in a pending deprecation state.
+* Bugfix: Ensure we always return 404 instead of 500 if a lookup field cannot be converted to the correct lookup type.  (Eg non-numeric `AutoInteger` pk lookup)
+
+### 2.3.4
+
+**Date**: 24th May 2013
+
+* Serializer fields now support `label` and `help_text`.
+* Added `UnicodeJSONRenderer`.
+* `OPTIONS` requests now return metadata about fields for `POST` and `PUT` requests.
+* Bugfix: `charset` now properly included in `Content-Type` of responses.
+* Bugfix: Blank choice now added in browsable API on nullable relationships.
+* Bugfix: Many to many relationships with `through` tables are now read-only.
+* Bugfix: Serializer fields now respect model field args such as `max_length`.
+* Bugfix: SlugField now performs slug validation.
+* Bugfix: Lazy-translatable strings now properly serialized.
+* Bugfix: Browsable API now supports bootswatch styles properly.
 * Bugfix: HyperlinkedIdentityField now uses `lookup_field` kwarg.
 
-### 2.3.2
+**Note**: Responses now correctly include an appropriate charset on the `Content-Type` header.  For example: `application/json; charset=utf-8`.  If you have tests that check the content type of responses, you may need to update these accordingly.
+
+### 2.3.3
 
 **Date**: 16th May 2013
 
 * Added SearchFilter
 * Added OrderingFilter
 * Added GenericViewSet
-* Bugfix: Multiple `@action` and `@link` methods now allowed on viewsets. 
+* Bugfix: Multiple `@action` and `@link` methods now allowed on viewsets.
 * Bugfix: Fix API Root view issue with DjangoModelPermissions
 
 ### 2.3.2
@@ -92,19 +313,19 @@ You can determine your currently installed version using `pip freeze`:
 **Date**: 17th April 2013
 
 * Loud failure when view does not return a `Response` or `HttpResponse`.
-* Bugfix: Fix for Django 1.3 compatiblity.
+* Bugfix: Fix for Django 1.3 compatibility.
 * Bugfix: Allow overridden `get_object()` to work correctly.
 
 ### 2.2.6
 
 **Date**: 4th April 2013
 
-* OAuth2 authentication no longer requires unneccessary URL parameters in addition to the token.
+* OAuth2 authentication no longer requires unnecessary URL parameters in addition to the token.
 * URL hyperlinking in browsable API now handles more cases correctly.
 * Long HTTP headers in browsable API are broken in multiple lines when possible.
 * Bugfix: Fix regression with DjangoFilterBackend not worthing correctly with single object views.
 * Bugfix: OAuth should fail hard when invalid token used.
-* Bugfix: Fix serializer potentially returning `None` object for models that define `__bool__` or `__len__`. 
+* Bugfix: Fix serializer potentially returning `None` object for models that define `__bool__` or `__len__`.
 
 ### 2.2.5
 
@@ -211,7 +432,7 @@ The security vulnerabilities only affect APIs which use the `XMLParser` class, b
 * Bugfix: Validation errors instead of exceptions when related fields receive incorrect types.
 * Bugfix: Handle ObjectDoesNotExist exception when serializing null reverse one-to-one
 
-**Note**: Prior to 2.1.16, The Decimals would render in JSON using floating point if `simplejson` was installed, but otherwise render using string notation. Now that use of `simplejson` has been deprecated, Decimals will consistently render using string notation.  See [#582] for more details. 
+**Note**: Prior to 2.1.16, The Decimals would render in JSON using floating point if `simplejson` was installed, but otherwise render using string notation.  Now that use of `simplejson` has been deprecated, Decimals will consistently render using string notation.  See [#582] for more details.
 
 ### 2.1.15
 
@@ -512,3 +733,4 @@ This change will not affect user code, so long as it's following the recommended
 [2.1.0-notes]: https://groups.google.com/d/topic/django-rest-framework/Vv2M0CMY9bg/discussion
 [announcement]: rest-framework-2-announcement.md
 [#582]: https://github.com/tomchristie/django-rest-framework/issues/582
+[rfc-6266]: http://tools.ietf.org/html/rfc6266#section-4.3
